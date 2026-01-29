@@ -1,0 +1,1302 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent 执行流程</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen', 'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue', sans-serif;
+            background-color: #0a0e27;
+            color: #e8e8e8;
+            line-height: 1.6;
+            height: 100vh;
+            overflow: hidden;
+        }
+
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        .header {
+            padding: 20px 30px;
+            background: linear-gradient(135deg, #1a1f3a 0%, #0a0e27 100%);
+            border-bottom: 1px solid #1a1f3a;
+        }
+
+        .header h1 {
+            color: #e8e8e8;
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .header .subtitle {
+            color: #8c8c8c;
+            font-size: 14px;
+        }
+
+        .main-content {
+            flex: 1;
+            display: flex;
+            overflow: hidden;
+        }
+
+        .chat-panel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            border-right: 1px solid #1a1f3a;
+        }
+
+        .messages-container {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            background-color: #0a0e27;
+        }
+
+        .message {
+            margin-bottom: 20px;
+            animation: fadeIn 0.3s ease-in;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(10px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        .message.user {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .message.assistant {
+            display: flex;
+            justify-content: flex-start;
+        }
+
+        .message-bubble {
+            max-width: 70%;
+            padding: 12px 16px;
+            border-radius: 8px;
+            word-wrap: break-word;
+        }
+
+        .message.user .message-bubble {
+            background-color: #1890ff;
+            color: #fff;
+        }
+
+        .message.assistant .message-bubble {
+            background-color: #141829;
+            border: 1px solid #1a1f3a;
+            color: #e8e8e8;
+        }
+
+        .message-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #8c8c8c;
+        }
+
+        .message-content {
+            font-size: 14px;
+            line-height: 1.6;
+            white-space: pre-wrap;
+        }
+
+        .tool-call {
+            background-color: #0a0e27;
+            border: 1px solid #1a1f3a;
+            border-radius: 6px;
+            padding: 12px;
+            margin-top: 8px;
+        }
+
+        .tool-name {
+            color: #faad14;
+            font-weight: 600;
+            font-size: 13px;
+            margin-bottom: 8px;
+        }
+
+        .tool-param {
+            color: #8c8c8c;
+            font-size: 12px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            margin: 4px 0;
+        }
+
+        .tool-result {
+            color: #52c41a;
+            font-size: 12px;
+            margin-top: 8px;
+            padding-top: 8px;
+            border-top: 1px solid #1a1f3a;
+        }
+
+        .dispatch-message {
+            background-color: #1a2332;
+            border-left: 3px solid #1890ff;
+            padding: 12px 16px;
+            border-radius: 4px;
+            margin: 12px 0;
+        }
+
+        .dispatch-message .agent {
+            color: #1890ff;
+            font-weight: 600;
+            font-size: 13px;
+        }
+
+        .input-panel {
+            padding: 16px 20px;
+            background-color: #0a0e27;
+            border-top: 1px solid #1a1f3a;
+        }
+
+        .input-container {
+            display: flex;
+            gap: 12px;
+            align-items: flex-end;
+        }
+
+        .input-textarea {
+            flex: 1;
+            background-color: #141829;
+            border: 1px solid #1a1f3a;
+            border-radius: 6px;
+            padding: 12px;
+            color: #e8e8e8;
+            font-size: 14px;
+            font-family: inherit;
+            resize: none;
+            min-height: 50px;
+            max-height: 150px;
+        }
+
+        .input-textarea:focus {
+            outline: none;
+            border-color: #1890ff;
+        }
+
+        .input-textarea::placeholder {
+            color: #8c8c8c;
+        }
+
+        .send-button {
+            background-color: #1890ff;
+            border: none;
+            border-radius: 6px;
+            padding: 12px 24px;
+            color: #fff;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .send-button:hover:not(:disabled) {
+            background-color: #40a9ff;
+        }
+
+        .send-button:disabled {
+            background-color: #1a1f3a;
+            color: #8c8c8c;
+            cursor: not-allowed;
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 12px;
+        }
+
+        .quick-button {
+            background-color: transparent;
+            border: 1px solid #1a1f3a;
+            border-radius: 4px;
+            padding: 6px 12px;
+            color: #8c8c8c;
+            font-size: 12px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .quick-button:hover {
+            border-color: #1890ff;
+            color: #1890ff;
+        }
+
+        .sidebar {
+            width: 400px;
+            display: flex;
+            flex-direction: column;
+            background-color: #141829;
+            border-left: 1px solid #1a1f3a;
+            overflow-y: auto;
+        }
+
+        .sidebar-section {
+            padding: 20px;
+            border-bottom: 1px solid #1a1f3a;
+        }
+
+        .sidebar-section h3 {
+            color: #e8e8e8;
+            font-size: 16px;
+            margin-bottom: 16px;
+        }
+
+        .function-info {
+            background-color: #0a0e27;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            border: 1px solid #1a1f3a;
+        }
+
+        .function-info .label {
+            color: #8c8c8c;
+            font-size: 11px;
+            margin-bottom: 4px;
+        }
+
+        .function-info .value {
+            color: #e8e8e8;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .coverage-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            margin-left: 6px;
+        }
+
+        .coverage-badge.initial {
+            background-color: #faad14;
+            color: #fff;
+        }
+
+        .coverage-badge.final {
+            background-color: #52c41a;
+            color: #fff;
+        }
+
+        .step-card {
+            background-color: #0a0e27;
+            border: 1px solid #1a1f3a;
+            border-radius: 6px;
+            padding: 12px;
+            margin-bottom: 12px;
+            opacity: 0;
+            transform: translateY(10px);
+            transition: all 0.3s ease;
+        }
+
+        .step-card.visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .step-card.active {
+            border-color: #1890ff;
+            box-shadow: 0 0 0 2px rgba(24, 144, 255, 0.2);
+        }
+
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+
+        .step-number {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            width: 24px;
+            height: 24px;
+            background-color: #1890ff;
+            color: #fff;
+            border-radius: 50%;
+            font-weight: 600;
+            font-size: 12px;
+        }
+
+        .step-title {
+            color: #e8e8e8;
+            font-size: 13px;
+            font-weight: 600;
+        }
+
+        .agent-badge {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 10px;
+            font-size: 11px;
+            font-weight: 600;
+            background-color: #1a2332;
+            color: #1890ff;
+            border: 1px solid #1890ff;
+        }
+
+        .status-indicator {
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+
+        .status-indicator.pending {
+            background-color: #8c8c8c;
+        }
+
+        .status-indicator.running {
+            background-color: #faad14;
+            animation: pulse 1.5s ease-in-out infinite;
+        }
+
+        .status-indicator.completed {
+            background-color: #52c41a;
+        }
+
+        @keyframes pulse {
+            0%, 100% {
+                opacity: 1;
+            }
+            50% {
+                opacity: 0.5;
+            }
+        }
+
+        .typing-indicator {
+            display: inline-block;
+            color: #8c8c8c;
+            font-size: 12px;
+            font-style: italic;
+        }
+
+        .typing-dots {
+            display: inline-block;
+        }
+
+        .typing-dots span {
+            animation: typing 1.4s infinite;
+        }
+
+        .typing-dots span:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+
+        .typing-dots span:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+
+        @keyframes typing {
+            0%, 60%, 100% {
+                opacity: 0.3;
+            }
+            30% {
+                opacity: 1;
+            }
+        }
+
+        .code-block {
+            background-color: #0a0e27;
+            border: 1px solid #1a1f3a;
+            border-radius: 4px;
+            padding: 12px;
+            margin-top: 8px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            overflow-x: auto;
+        }
+
+        .code-line {
+            display: block;
+            padding: 2px 0;
+        }
+
+        .code-line.covered {
+            color: #52c41a;
+        }
+
+        .code-line.uncovered {
+            color: #ff4d4f;
+            background-color: rgba(255, 77, 79, 0.1);
+            padding: 2px 8px;
+            border-left: 3px solid #ff4d4f;
+        }
+
+        .progress-bar {
+            width: 100%;
+            height: 4px;
+            background-color: #1a1f3a;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-top: 12px;
+        }
+
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #1890ff 0%, #52c41a 100%);
+            transition: width 0.3s ease;
+        }
+    </style>
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <div class="header" style="display: none;">
+        </div>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Chat Panel -->
+            <div class="chat-panel">
+                <div class="messages-container" id="messagesContainer">
+                </div>
+
+                <!-- Input Panel -->
+                <div class="input-panel">
+                    <div class="input-container">
+                        <textarea
+                            id="inputTextarea"
+                            class="input-textarea"
+                            placeholder="输入指令，例如：请提高dcosd函数的代码覆盖率..."
+                            rows="2"
+                        ></textarea>
+                        <button class="send-button" id="sendButton" onclick="handleSend()">
+                            发送
+                        </button>
+                    </div>
+                    <div class="quick-actions">
+                        <button class="quick-button" onclick="quickStart()">🚀 快速开始</button>
+                        <button class="quick-button" onclick="resetDemo()">🔄 重置</button>
+                        <button class="quick-button" id="autoPlayButton" onclick="toggleAutoPlay()">▶️ 自动播放</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Sidebar -->
+            <div class="sidebar">
+                <div class="sidebar-section">
+                    <h3>🎯 测试目标</h3>
+                    <div class="function-info" id="targetInfo">
+                        <div class="function-info">
+                            <div class="label">函数名</div>
+                            <div class="value" id="targetFunctionName">-</div>
+                        </div>
+                        <div class="function-info">
+                            <div class="label">文件路径</div>
+                            <div class="value" id="targetFilePath">-</div>
+                        </div>
+                        <div class="function-info">
+                            <div class="label">初始覆盖率</div>
+                            <div class="value" id="targetInitialCoverage">-</div>
+                        </div>
+                        <div class="function-info">
+                            <div class="label">当前覆盖率</div>
+                            <div class="value" id="targetCurrentCoverage">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="sidebar-section">
+                    <h3>🔄 执行步骤</h3>
+                    <div id="stepsContainer"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 执行流程数据
+        const workflowSteps = [
+            {
+                step: 1,
+                phase: 1,
+                title: "Supervisor 派发 → Coverage Analyzer",
+                agent: "Coverage Analyzer",
+                decision: [
+                    "检查：not _has_coverage_or_seed_tool_results(messages) → True",
+                    "路由：coverage_analyzer"
+                ],
+                toolCall: {
+                    name: "Collect_Coverage",
+                    params: { target_func_id: "function:dcosd@postgresql-17.6/src/backend/utils/adt/float.c:2311" },
+                    result: {
+                        coverage: 80.0,
+                        covered_lines: 16,
+                        total_lines: 20,
+                        function_name: "dcosd",
+                        file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                        status: "Success",
+                        error_message: "",
+                        gcov_content: "        -: 2307:/*\n        -: 2308: *\t\tdcosd\t\t\t- returns the cosine of arg1 (degrees)\n        -: 2309: */\n        -: 2310:Datum\n      132: 2311:dcosd(PG_FUNCTION_ARGS)\n        -: 2312:{\n      132: 2313:\tfloat8\t\targ1 = PG_GETARG_FLOAT8(0);\n        -: 2314:\tfloat8\t\tresult;\n      132: 2315:\tint\t\t\tsign = 1;\n        -: 2316:\n        -: 2317:\t/*\n        -: 2318:\t * Per the POSIX spec, return NaN if the input is NaN and throw an error\n        -: 2319:\t * if the input is infinite.\n        -: 2320:\t */\n      132: 2321:\tif (isnan(arg1))\n    #####: 2322:\t\tPG_RETURN_FLOAT8(get_float8_nan());\n        -: 2323:\n      132: 2324:\tif (isinf(arg1))\n    #####: 2325:\t\tereport(ERROR,\n        -: 2326:\t\t\t\t(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),\n        -: 2327:\t\t\t\t errmsg(\"input is out of range\"));\n        -: 2328:\n     132*: 2329:\tINIT_DEGREE_CONSTANTS();\n        -: 2330:\n        -: 2331:\t/* Reduce the range of the input to [0,90] degrees */\n      132: 2332:\targ1 = fmod(arg1, 360.0);\n        -: 2333:\n      132: 2334:\tif (arg1 < 0.0)\n        -: 2335:\t{\n        -: 2336:\t\t/* cosd(-x) = cosd(x) */\n    #####: 2337:\t\targ1 = -arg1;\n        -: 2338:\t}\n        -: 2339:\n      132: 2340:\tif (arg1 > 180.0)\n        -: 2341:\t{\n        -: 2342:\t\t/* cosd(360-x) = cosd(x) */\n       36: 2343:\t\targ1 = 360.0 - arg1;\n        -: 2344:\t}\n        -: 2345:\n      132: 2346:\tif (arg1 > 90.0)\n        -: 2347:\t{\n        -: 2348:\t\t/* cosd(180-x) = -cosd(x) */\n       36: 2349:\t\targ1 = 180.0 - arg1;\n       36: 2350:\t\tsign = -sign;\n        -: 2351:\t}\n        -: 2352:\n      132: 2353:\tresult = sign * cosd_q1(arg1);\n        -: 2354:\n      132: 2355:\tif (unlikely(isinf(result)))\n    #####: 2356:\t\tfloat_overflow_error();\n        -: 2357:\n      132: 2358:\tPG_RETURN_FLOAT8(result);\n        -: 2359:}"
+                    }
+                },
+                agentReply: "好的，我已经收集了 `dcosd` 函数的当前覆盖率信息：\n\n## 当前覆盖率状态：\n- **覆盖率百分比**：80.0%\n- **覆盖行数**：16/20行\n- **未覆盖行数**：4行\n\n## 未覆盖的代码行：\n1. **第2322行**：`PG_RETURN_FLOAT8(get_float8_nan());` - NaN处理分支\n2. **第2325-2327行**：`ereport(ERROR, ...)` - 无穷大错误处理分支\n3. **第2337行**：`arg1 = -arg1;` - 负角度处理分支\n4. **第2356行**：`float_overflow_error();` - 溢出错误处理分支",
+                delay: 2000
+            },
+            {
+                step: 2,
+                phase: 1,
+                title: "Supervisor 派发 → Coverage Analyzer",
+                agent: "Coverage Analyzer",
+                decision: [
+                    "检查：_has_coverage_or_seed_tool_results(messages) → True",
+                    "检查：_count_collect_coverage(messages) >= 1 → True",
+                    "检查：not _has_sql_generated(messages) → True",
+                    "路由：coverage_analyzer（继续生成SQL）"
+                ],
+                toolCall: {
+                    name: "Search_Nearest_Seed",
+                    params: { target_func_id: "function:dcosd@postgresql-17.6/src/backend/utils/adt/float.c:2311" },
+                    result: {
+                        status: "Success",
+                        error_message: "",
+                        seed_sql: "SELECT x,\n       cosd(x),\n       cosd(x) IN (-1,-0.5,0,0.5,1) AS cosd_exact\nFROM (VALUES (0), (60), (90), (120), (180),\n      (240), (270), (300), (360)) AS t(x);",
+                        call_chain: ["dcosd"],
+                        distance: 0,
+                        nearest_function: "function:dcosd@postgresql-17.6/src/backend/utils/adt/float.c:0"
+                    }
+                },
+                agentReply: "太好了！我找到了一个可以直接触发 `dcosd` 函数的 SQL 种子，距离为 0，这意味着这个 SQL 可以直接调用 `dcosd` 函数。\n\n## 分析结果：\n\n### 1. 找到的 SQL 种子：\n```sql\nSELECT x,\n       cosd(x),\n       cosd(x) IN (-1,-0.5,0,0.5,1) AS cosd_exact\nFROM (VALUES (0), (60), (90), (120), (180),\n      (240), (270), (300), (360)) AS t(x);\n```\n\n### 2. 调用链：\n- `dcosd` - 直接调用\n\n### 3. 当前测试覆盖情况分析：\n从之前的 gcov 输出可以看到，这个种子 SQL 已经覆盖了 `dcosd` 函数的大部分代码（132次调用），但仍有以下未覆盖的行：\n\n1. **第2322行**：`PG_RETURN_FLOAT8(get_float8_nan());` - NaN 处理\n2. **第2325-2327行**：`ereport(ERROR, ...)` - 无穷大错误处理  \n3. **第2337行**：`arg1 = -arg1;` - 负角度处理\n4. **第2356行**：`float_overflow_error();` - 溢出错误处理\n\n### 4. 生成的SQL测试用例：\n基于现有种子，我生成了以下SQL测试用例：\n```sql\nSELECT cosd(0);\nSELECT cosd(90);\nSELECT cosd(180);\n```\n\n### 5. 需要补充的测试用例：\n基于现有种子，需要生成以下类型的 SQL 来覆盖未覆盖的代码：\n\n1. **NaN 输入测试**：\n   ```sql\n   SELECT cosd('NaN'::float8);\n   ```\n\n2. **无穷大输入测试**：\n   ```sql\n   SELECT cosd('Infinity'::float8);\n   SELECT cosd('-Infinity'::float8);\n   ```\n\n3. **负角度测试**：\n   ```sql\n   SELECT cosd(-45.0);\n   SELECT cosd(-90.0);\n   SELECT cosd(-180.0);\n   ```\n\n4. **可能导致溢出的测试**：\n   - 需要找到能导致 `cosd_q1` 计算结果溢出的角度值",
+                delay: 2500
+            },
+            {
+                step: 3,
+                phase: 1,
+                title: "Supervisor 派发 → SQL Tester",
+                agent: "SQL Tester",
+                decision: [
+                    "检查：_has_sql_generated(messages) → True",
+                    "检查：not _has_sql_executed(messages) → True",
+                    "路由：sql_tester"
+                ],
+                toolCall: {
+                    name: "Run_SQL_Test",
+                    params: { sql_script: "SELECT cosd(0); SELECT cosd(90); SELECT cosd(180);" },
+                    result: {
+                        status: "Success",
+                        error_message: "",
+                        executed: true,
+                        raw_result: "执行成功: 执行成功，返回3行数据\n返回数据: [(1.0,), (0.0,), (-1.0,)]",
+                        message: "执行成功，返回3行数据",
+                        db_results: "[(1.0,), (0.0,), (-1.0,)]"
+                    }
+                },
+                agentReply: "SQL 测试用例执行成功。返回了3行数据：\n- cosd(0) = 1.0\n- cosd(90) = 0.0\n- cosd(180) = -1.0",
+                delay: 2000
+            },
+            {
+                step: 4,
+                phase: 1,
+                title: "Supervisor 派发 → SQL Tester",
+                agent: "SQL Tester",
+                decision: [
+                    "检查：_has_sql_executed(messages) → True",
+                    "检查：not coverage_verified_after_sql → True",
+                    "路由：sql_tester（验证覆盖率）"
+                ],
+                toolCall: {
+                    name: "Collect_Coverage",
+                    params: { target_func_id: "function:dcosd@postgresql-17.6/src/backend/utils/adt/float.c:2311" },
+                    result: {
+                        coverage: 80.0,
+                        covered_lines: 16,
+                        total_lines: 20,
+                        function_name: "dcosd",
+                        file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                        status: "Success",
+                        error_message: "",
+                        gcov_content: "        -: 2307:/*\n        -: 2308: *\t\tdcosd\t\t\t- returns the cosine of arg1 (degrees)\n        -: 2309: */\n        -: 2310:Datum\n      132: 2311:dcosd(PG_FUNCTION_ARGS)\n        -: 2312:{\n      132: 2313:\tfloat8\t\targ1 = PG_GETARG_FLOAT8(0);\n        -: 2314:\tfloat8\t\tresult;\n      132: 2315:\tint\t\t\tsign = 1;\n        -: 2316:\n        -: 2317:\t/*\n        -: 2318:\t * Per the POSIX spec, return NaN if the input is NaN and throw an error\n        -: 2319:\t * if the input is infinite.\n        -: 2320:\t */\n      132: 2321:\tif (isnan(arg1))\n    #####: 2322:\t\tPG_RETURN_FLOAT8(get_float8_nan());\n        -: 2323:\n      132: 2324:\tif (isinf(arg1))\n    #####: 2325:\t\tereport(ERROR,\n        -: 2326:\t\t\t\t(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),\n        -: 2327:\t\t\t\t errmsg(\"input is out of range\"));\n        -: 2328:\n     132*: 2329:\tINIT_DEGREE_CONSTANTS();\n        -: 2330:\n        -: 2331:\t/* Reduce the range of the input to [0,90] degrees */\n      132: 2332:\targ1 = fmod(arg1, 360.0);\n        -: 2333:\n      132: 2334:\tif (arg1 < 0.0)\n        -: 2335:\t{\n        -: 2336:\t\t/* cosd(-x) = cosd(x) */\n    #####: 2337:\t\targ1 = -arg1;\n        -: 2338:\t}\n        -: 2339:\n      132: 2340:\tif (arg1 > 180.0)\n        -: 2341:\t{\n        -: 2342:\t\t/* cosd(360-x) = cosd(x) */\n       36: 2343:\t\targ1 = 360.0 - arg1;\n        -: 2344:\t}\n        -: 2345:\n      132: 2346:\tif (arg1 > 90.0)\n        -: 2347:\t{\n        -: 2348:\t\t/* cosd(180-x) = -cosd(x) */\n       36: 2349:\t\targ1 = 180.0 - arg1;\n       36: 2350:\t\tsign = -sign;\n        -: 2351:\t}\n        -: 2352:\n      132: 2353:\tresult = sign * cosd_q1(arg1);\n        -: 2354:\n      132: 2355:\tif (unlikely(isinf(result)))\n    #####: 2356:\t\tfloat_overflow_error();\n        -: 2357:\n      132: 2358:\tPG_RETURN_FLOAT8(result);\n        -: 2359:}"
+                    }
+                },
+                delay: 2000
+            },
+            {
+                step: 5,
+                phase: 2,
+                title: "派发 Code Explorer",
+                agent: "Code Explorer",
+                decision: [
+                    "检查：_has_sql_executed(messages) → True",
+                    "检查：coverage_verified_after_sql → True",
+                    "检查：_should_iterate(messages, agent_history) → True（覆盖率未提升）",
+                    "检查：_needs_code_exploration(messages) → True（未获取代码信息）",
+                    "路由：code_explorer"
+                ],
+                toolCalls: [
+                    {
+                        name: "Get_Code_Context",
+                        params: { query_name: "dcosd", query_type: "FUNCTION" },
+                        result: {
+                            source_code: "        -: 2307:/*\n        -: 2308: *\t\tdcosd\t\t\t- returns the cosine of arg1 (degrees)\n        -: 2309: */\n        -: 2310:Datum\n      132: 2311:dcosd(PG_FUNCTION_ARGS)\n        -: 2312:{\n      132: 2313:\tfloat8\t\targ1 = PG_GETARG_FLOAT8(0);\n        -: 2314:\tfloat8\t\tresult;\n      132: 2315:\tint\t\t\tsign = 1;\n        -: 2316:\n        -: 2317:\t/*\n        -: 2318:\t * Per the POSIX spec, return NaN if the input is NaN and throw an error\n        -: 2319:\t * if the input is infinite.\n        -: 2320:\t */\n      132: 2321:\tif (isnan(arg1))\n    #####: 2322:\t\tPG_RETURN_FLOAT8(get_float8_nan());\n        -: 2323:\n      132: 2324:\tif (isinf(arg1))\n    #####: 2325:\t\tereport(ERROR,\n        -: 2326:\t\t\t\t(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),\n        -: 2327:\t\t\t\t errmsg(\"input is out of range\")));\n        -: 2328:\n     132*: 2329:\tINIT_DEGREE_CONSTANTS();\n        -: 2330:\n        -: 2331:\t/* Reduce the range of the input to [0,90] degrees */\n      132: 2332:\targ1 = fmod(arg1, 360.0);\n        -: 2333:\n      132: 2334:\tif (arg1 < 0.0)\n        -: 2335:\t{\n        -: 2336:\t\t/* cosd(-x) = cosd(x) */\n    #####: 2337:\t\targ1 = -arg1;\n        -: 2338:\t}\n        -: 2339:\n      132: 2340:\tif (arg1 > 180.0)\n        -: 2341:\t{\n        -: 2342:\t\t/* cosd(360-x) = cosd(x) */\n       36: 2343:\t\targ1 = 360.0 - arg1;\n        -: 2344:\t}\n        -: 2345:\n      132: 2346:\tif (arg1 > 90.0)\n        -: 2347:\t{\n        -: 2348:\t\t/* cosd(180-x) = -cosd(x) */\n       36: 2349:\t\targ1 = 180.0 - arg1;\n       36: 2350:\t\tsign = -sign;\n        -: 2351:\t}\n        -: 2352:\n      132: 2353:\tresult = sign * cosd_q1(arg1);\n        -: 2354:\n      132: 2355:\tif (unlikely(isinf(result)))\n    #####: 2356:\t\tfloat_overflow_error();\n        -: 2357:\n      132: 2358:\tPG_RETURN_FLOAT8(result);\n        -: 2359:}",
+                            file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                            line_number: 2311,
+                            name: "dcosd",
+                            type: "function",
+                            signature: "",
+                            status: "Success",
+                            error_message: ""
+                        }
+                    },
+                    {
+                        name: "Get_Code_Context",
+                        params: { query_name: "cosd_q1", query_type: "FUNCTION" },
+                        result: {
+                            source_code: "        -: 2287:/*\n        -: 2288: *\t\tcosd_q1\t\t\t- returns the cosine of an angle in the first quadrant\n        -: 2289: *\t\t\t\t\t\t  (0 to 90 degrees).\n        -: 2290: */\n        -: 2291:static double\n      296: 2292:cosd_q1(double x)\n        -: 2293:{\n        -: 2294:\t/*\n        -: 2295:\t * Stitch together the sine and cosine functions for the ranges [0, 60]\n        -: 2296:\t * and (60, 90].  These guarantee to return exact answers at their\n        -: 2297:\t * endpoints, so the overall result is a continuous monotonic function\n        -: 2298:\t * that gives exact results when x = 0, 60 and 90 degrees.\n        -: 2299:\t */\n      296: 2300:\tif (x <= 60.0)\n      223: 2301:\t\treturn cosd_0_to_60(x);\n        -: 2302:\telse\n       73: 2303:\t\treturn sind_0_to_30(90.0 - x);\n        -: 2304:}",
+                            file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                            line_number: 2292,
+                            name: "cosd_q1",
+                            type: "function",
+                            signature: "",
+                            status: "Success",
+                            error_message: ""
+                        }
+                    },
+                    {
+                        name: "Get_Code_Context",
+                        params: { query_name: "INIT_DEGREE_CONSTANTS", query_type: "MACRO" },
+                        result: {
+                            source_code: "#define INIT_DEGREE_CONSTANTS() \\\ndo { \\\n\tif (!degree_consts_set) \\\n\t\tinit_degree_constants(); \\\n} while(0)",
+                            file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                            line_number: 2024,
+                            name: "INIT_DEGREE_CONSTANTS",
+                            type: "macro",
+                            signature: "",
+                            status: "Success",
+                            error_message: ""
+                        }
+                    }
+                ],
+                agentReply: "基于我对 `dcosd` 函数的代码分析，我可以提供以下信息来帮助覆盖率分析：\n\n## 代码分析总结\n\n### 1. `dcosd` 函数的关键逻辑\n`dcosd` 函数计算角度的余弦值（以度为单位）。主要逻辑包括：\n- 处理 NaN 和无穷大输入\n- 将输入角度规约到 [0, 90] 度范围\n- 调用 `cosd_q1` 计算第一象限的余弦值\n\n### 2. 未覆盖的代码行（基于 gcov 输出）\n从 gcov 输出可以看到以下未覆盖的行（标记为 `#####`）：\n1. **第2322行**：`PG_RETURN_FLOAT8(get_float8_nan());` - 当输入为 NaN 时返回 NaN\n2. **第2325-2327行**：`ereport(ERROR, ...)` - 当输入为无穷大时报错\n3. **第2337行**：`arg1 = -arg1;` - 处理负角度\n4. **第2356行**：`float_overflow_error();` - 处理结果溢出\n\n### 3. 需要覆盖的测试场景\n为了覆盖这些未覆盖的代码行，需要生成以下类型的 SQL 测试用例：\n\n1. **NaN 输入**：触发 `isnan(arg1)` 条件\n2. **无穷大输入**：触发 `isinf(arg1)` 条件  \n3. **负角度输入**：触发 `arg1 < 0.0` 条件\n4. **导致溢出的输入**：触发 `isinf(result)` 条件",
+                findings: [
+                    "第2322行：当 isnan(arg1) 为 true 时 → SQL: SELECT cosd('NaN'::float8);",
+                    "第2325-2327行：当 isinf(arg1) 为 true 时 → SQL: SELECT cosd('Infinity'::float8);",
+                    "第2337行：当 arg1 < 0.0 时 → SQL: SELECT cosd(-45.0);",
+                    "第2356行：当 isinf(result) 为 true 时 → 需要找到能导致溢出的角度值"
+                ],
+                delay: 3000
+            },
+            {
+                step: 6,
+                phase: 2,
+                title: "Supervisor 派发 → Coverage Analyzer",
+                agent: "Coverage Analyzer",
+                decision: [
+                    "检查：_has_code_explorer_tool_results(messages) → True",
+                    "检查：_should_iterate(messages, agent_history) → True",
+                    "检查：agent_history[-1] == \"code_explorer\" → True",
+                    "路由：coverage_analyzer（基于代码分析生成SQL）"
+                ],
+                agentReply: "基于代码分析，我生成了以下SQL测试用例来覆盖未覆盖的代码行：\n\n**生成的SQL测试用例：**\n```sql\nSELECT cosd('NaN'::float8);\nSELECT cosd('Infinity'::float8);\nSELECT cosd('-Infinity'::float8);\nSELECT cosd(-45.0);\n```\n\n这些测试用例将覆盖：\n1. 第2322行（NaN处理）\n2. 第2325-2327行（无穷大错误处理）\n3. 第2337行（负角度处理）",
+                delay: 2000
+            },
+            {
+                step: 7,
+                phase: 2,
+                title: "Supervisor 派发 → SQL Tester",
+                agent: "SQL Tester",
+                decision: [
+                    "检查：_has_sql_generated(messages) → True（新的SQL）",
+                    "检查：not _has_sql_executed(messages) → True（新SQL未执行）",
+                    "路由：sql_tester"
+                ],
+                toolCalls: [
+                    {
+                        name: "Run_SQL_Test",
+                        params: { sql_script: "SELECT cosd('NaN'::float8);" },
+                        result: {
+                            status: "Success",
+                            error_message: "",
+                            executed: true,
+                            raw_result: "执行成功: 执行成功，返回1行数据\n返回数据: [(nan,)]",
+                            message: "执行成功，返回1行数据",
+                            db_results: "[(nan,)]"
+                        }
+                    },
+                    {
+                        name: "Run_SQL_Test",
+                        params: { sql_script: "SELECT cosd('Infinity'::float8);" },
+                        result: {
+                            status: "SQL Error",
+                            error_message: "错误代码: 22003\ninput is out of range\n",
+                            executed: true,
+                            raw_result: "执行失败: 错误代码: 22003\ninput is out of range\n",
+                            message: "错误代码: 22003\ninput is out of range\n"
+                        }
+                    },
+                    {
+                        name: "Run_SQL_Test",
+                        params: { sql_script: "SELECT cosd('-Infinity'::float8);" },
+                        result: {
+                            status: "SQL Error",
+                            error_message: "错误代码: 22003\ninput is out of range\n",
+                            executed: true,
+                            raw_result: "执行失败: 错误代码: 22003\ninput is out of range\n",
+                            message: "错误代码: 22003\ninput is out of range\n"
+                        }
+                    },
+                    {
+                        name: "Run_SQL_Test",
+                        params: { sql_script: "SELECT cosd(-45.0);" },
+                        result: {
+                            status: "Success",
+                            error_message: "",
+                            executed: true,
+                            raw_result: "执行成功: 执行成功，返回1行数据\n返回数据: [(0.7071067811865475,)]",
+                            message: "执行成功，返回1行数据",
+                            db_results: "[(0.7071067811865475,)]"
+                        }
+                    }
+                ],
+                agentReply: "已执行4个SQL测试用例：\n1. `SELECT cosd('NaN'::float8);` - ✅ 执行成功，返回 nan\n2. `SELECT cosd('Infinity'::float8);` - ❌ SQL错误：错误代码 22003 input is out of range\n3. `SELECT cosd('-Infinity'::float8);` - ❌ SQL错误：错误代码 22003 input is out of range\n4. `SELECT cosd(-45.0);` - ✅ 执行成功，返回 0.7071067811865475",
+                delay: 3000
+            },
+            {
+                step: 8,
+                phase: 2,
+                title: "Supervisor 派发 → SQL Tester",
+                agent: "SQL Tester",
+                decision: [
+                    "检查：_has_sql_executed(messages) → True",
+                    "检查：not coverage_verified_after_sql → True",
+                    "路由：sql_tester（验证覆盖率）"
+                ],
+                toolCall: {
+                    name: "Collect_Coverage",
+                    params: { target_func_id: "function:dcosd@postgresql-17.6/src/backend/utils/adt/float.c:2311", trigger_sql: "SELECT cosd('NaN'::float8); SELECT cosd('Infinity'::float8); SELECT cosd('-Infinity'::float8); SELECT cosd(-45.0);", previous_coverage: 80.0 },
+                    result: {
+                        coverage: 95.0,
+                        covered_lines: 19,
+                        total_lines: 20,
+                        function_name: "dcosd",
+                        file_path: "postgresql-17.6/src/backend/utils/adt/float.c",
+                        status: "Success",
+                        error_message: "",
+                        gcov_content: "        -: 2307:/*\n        -: 2308: *\t\tdcosd\t\t\t- returns the cosine of arg1 (degrees)\n        -: 2309: */\n        -: 2310:Datum\n      136: 2311:dcosd(PG_FUNCTION_ARGS)\n        -: 2312:{\n      136: 2313:\tfloat8\t\targ1 = PG_GETARG_FLOAT8(0);\n        -: 2314:\tfloat8\t\tresult;\n      136: 2315:\tint\t\t\tsign = 1;\n        -: 2316:\n        -: 2317:\t/*\n        -: 2318:\t * Per the POSIX spec, return NaN if the input is NaN and throw an error\n        -: 2319:\t * if the input is infinite.\n        -: 2320:\t */\n      136: 2321:\tif (isnan(arg1))\n        1: 2322:\t\tPG_RETURN_FLOAT8(get_float8_nan());\n        -: 2323:\n      135: 2324:\tif (isinf(arg1))\n       2*: 2325:\t\tereport(ERROR,\n        -: 2326:\t\t\t\t(errcode(ERRCODE_NUMERIC_VALUE_OUT_OF_RANGE),\n        -: 2327:\t\t\t\t errmsg(\"input is out of range\"));\n        -: 2328:\n      133: 2329:\tINIT_DEGREE_CONSTANTS();\n        -: 2330:\n        -: 2331:\t/* Reduce the range of the input to [0,90] degrees */\n      133: 2332:\targ1 = fmod(arg1, 360.0);\n        -: 2333:\n      133: 2334:\tif (arg1 < 0.0)\n        -: 2335:\t{\n        -: 2336:\t\t/* cosd(-x) = cosd(x) */\n        1: 2337:\t\targ1 = -arg1;\n        -: 2338:\t}\n        -: 2339:\n      133: 2340:\tif (arg1 > 180.0)\n        -: 2341:\t{\n        -: 2342:\t\t/* cosd(360-x) = cosd(x) */\n       36: 2343:\t\targ1 = 360.0 - arg1;\n        -: 2344:\t}\n        -: 2345:\n      133: 2346:\tif (arg1 > 90.0)\n        -: 2347:\t{\n        -: 2348:\t\t/* cosd(180-x) = -cosd(x) */\n       36: 2349:\t\targ1 = 180.0 - arg1;\n       36: 2350:\t\tsign = -sign;\n        -: 2351:\t}\n        -: 2352:\n      133: 2353:\tresult = sign * cosd_q1(arg1);\n        -: 2354:\n      133: 2355:\tif (unlikely(isinf(result)))\n    #####: 2356:\t\tfloat_overflow_error();\n        -: 2357:\n      133: 2358:\tPG_RETURN_FLOAT8(result);\n        -: 2359:}"
+                    }
+                },
+                delay: 2000
+            },
+            {
+                step: 9,
+                phase: 2,
+                title: "结束流程",
+                agent: "Summary",
+                decision: [
+                    "检查：_has_sql_executed(messages) → True",
+                    "检查：coverage_verified_after_sql → True",
+                    "检查：_should_iterate(messages, agent_history) → False（覆盖率已提升）",
+                    "路由：__end__ → summary"
+                ],
+                agentReply: "# 测试报告\n\n## 1. 测试目标\n- **目标函数**：`dcosd`\n- **文件路径**：`postgresql-17.6/src/backend/utils/adt/float.c`\n- **行号**：2311\n- **测试目的**：提高 `dcosd` 函数的代码覆盖率，从初始的80.0%提升到更高水平\n\n## 2. 源代码分析\n- **函数签名**：`Datum dcosd(PG_FUNCTION_ARGS)`\n- **核心逻辑**：`dcosd` 函数计算给定角度（以度为单位）的余弦值。主要功能包括：\n  1. 检查输入是否为 NaN 或无穷大，并相应处理\n  2. 将输入角度规约到 [0, 90] 度范围\n  3. 调用 `cosd_q1` 函数计算第一象限的余弦值\n  4. 处理可能的浮点溢出错误\n- **分支结构**：函数包含6个主要分支，分别处理NaN、无穷大、负角度、大于180度、大于90度和结果溢出等情况\n\n## 3. 覆盖率分析\n### 初始覆盖率：\n- **初始覆盖率**：80.0% (16/20行)\n- **未覆盖行**：4行（第2322行、第2325-2327行、第2337行、第2356行）\n\n### 最终覆盖率：\n- **最终覆盖率**：95.0% (19/20行)\n- **覆盖率变化**：+15.0% (+3行)\n- **已覆盖行数**：16行 → 19行\n- **未覆盖行变化**：4行 → 1行\n\n### 已覆盖的新代码行：\n1. **第2322行**：`PG_RETURN_FLOAT8(get_float8_nan());` - ✅ 已覆盖（执行了1次）\n2. **第2325-2327行**：`ereport(ERROR, ...)` - ✅ 已覆盖（执行了2次）\n3. **第2337行**：`arg1 = -arg1;` - ✅ 已覆盖（执行了1次）\n\n### 仍然未覆盖的代码行：\n1. **第2356行**：`float_overflow_error();` - ❌ 未覆盖（标记为`#####`）\n   - 分支条件：`if (unlikely(isinf(result)))`\n   - 未覆盖原因：没有找到能导致 `cosd_q1` 计算结果溢出的角度值\n\n### 覆盖率详情（最终状态）：\n- **第2311行**：执行136次（函数入口）\n- **第2322行**：执行1次（NaN处理分支，新增覆盖）\n- **第2325行**：执行2次（无穷大错误分支，新增覆盖）\n- **第2337行**：执行1次（负角度处理分支，新增覆盖）\n- **第2356行**：执行0次（溢出错误处理，仍为`#####`）\n\n## 4. SQL 种子查找\n- **查找结果**：成功\n- **找到的种子 SQL**：\n  ```sql\n  SELECT x,\n         cosd(x),\n         cosd(x) IN (-1,-0.5,0,0.5,1) AS cosd_exact\n  FROM (VALUES (0), (60), (90), (120), (180),\n        (240), (270), (300), (360)) AS t(x);\n  ```\n- **调用链**：`[\"dcosd\"]`\n- **调用链距离**：0（直接调用）\n- **种子 SQL 分析**：覆盖了大部分正常路径，包括角度规约逻辑，但未覆盖NaN、无穷大、负角度和溢出处理分支\n\n## 5. SQL 测试用例生成与执行\n### 生成的 SQL 测试用例：\n1. **NaN输入测试**：`SELECT cosd('NaN'::float8);` - 覆盖第2322行的NaN处理分支\n2. **正无穷大输入测试**：`SELECT cosd('Infinity'::float8);` - 覆盖第2325-2327行的无穷大错误处理分支\n3. **负无穷大输入测试**：`SELECT cosd('-Infinity'::float8);` - 覆盖第2325-2327行的无穷大错误处理分支\n4. **负角度测试**：`SELECT cosd(-45.0);` - 覆盖第2337行的负角度处理分支\n\n### SQL 执行结果：\n1. **NaN输入测试**：✅ 执行成功，返回 `nan`\n2. **正无穷大输入测试**：❌ SQL错误，错误代码: 22003 input is out of range\n3. **负无穷大输入测试**：❌ SQL错误，错误代码: 22003 input is out of range\n4. **负角度测试**：✅ 执行成功，返回 `0.7071067811865475`\n\n### 覆盖率提升分析：\n- **执行前的覆盖率**：80.0%（16/20行）\n- **执行后的覆盖率**：95.0%（19/20行）\n- **实际提升**：+15.0%（+3行）\n- **是否达到预期**：部分达到预期，覆盖了3个未覆盖分支，但仍有1个分支未覆盖\n\n## 6. 工作流程总结\n### Coverage Analyzer 的工作：\n- **收集覆盖率**：收集了2次覆盖率（初始和最终）\n- **查找种子SQL**：查找了1次，成功找到直接调用 `dcosd` 的SQL种子\n- **生成SQL测试用例**：基于覆盖率分析和代码分析生成了4个针对性的SQL测试用例\n\n### Code Explorer 的工作：\n- **获取代码信息**：获取了 `dcosd` 函数的完整源代码、`cosd_q1` 辅助函数的源代码和 `INIT_DEGREE_CONSTANTS` 宏的定义\n- **分析调用关系**：分析了函数的调用关系，发现函数有6个主要分支\n\n### SQL Tester 的工作：\n- **执行的SQL**：执行了4个SQL测试用例\n- **执行结果**：2个成功执行（NaN和负角度），2个抛出错误（无穷大输入）\n- **验证覆盖率**：验证了2次覆盖率，确认覆盖率从80.0%提升到95.0%\n\n## 7. 总结与建议\n### 测试完成情况：\n- ✅ 收集初始覆盖率（80.0%）\n- ✅ 查找相关SQL种子（成功找到）\n- ✅ 获取源代码和调用关系\n- ✅ 生成针对性SQL测试用例（4个）\n- ✅ 执行SQL测试用例（全部执行）\n- ✅ 验证覆盖率提升（提升到95.0%）\n- **覆盖率提升**：从80.0%提升到95.0%，提升了15.0%\n\n### 发现的问题：\n1. **溢出分支难以触发**：第2356行的 `float_overflow_error()` 分支无法通过常规角度值触发，需要进一步研究如何触发 `cosd_q1` 函数的溢出\n\n### 下一步行动：\n1. **分析溢出条件**：深入研究 `cosd_q1` 函数的实现，了解在什么情况下会返回无穷大\n2. **生成新的测试用例**：尝试极大值输入、特殊角度值组合等\n3. **覆盖率目标**：达到100%覆盖率，覆盖所有6个分支",
+                delay: 1500
+            }
+        ];
+
+        let currentStep = 0;
+        let isAutoPlaying = false;
+        let isExecuting = false;
+
+        // 初始化
+        function init() {
+            updateStepsDisplay();
+            document.getElementById('inputTextarea').addEventListener('keypress', function(e) {
+                if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                }
+            });
+        }
+
+        // 快速开始
+        function quickStart() {
+            const defaultCommand = "请提高dcosd函数的代码覆盖率：1) 用 Collect_Coverage 收集覆盖率；2) 用 Search_Nearest_Seed 查找相关 SQL 种子；3) 用 Code Explorer 获取其源代码；4) 用 Traverse_Call_Graph 向上遍历调用关系；5) 用 Coverage Analyzer 生成 SQL 测试用例；6) 用 SQL Tester 执行 SQL 测试用例；7) 用 Collect_Coverage 验证覆盖率是否提升。8) 如果覆盖率没有提升，重复步骤 2-7。9) 如果覆盖率提升，结束。";
+            document.getElementById('inputTextarea').value = defaultCommand;
+            // 默认开启自动播放
+            isAutoPlaying = true;
+            const autoPlayButton = document.getElementById('autoPlayButton');
+            if (autoPlayButton) {
+                autoPlayButton.textContent = '⏸️ 暂停';
+            }
+            handleSend();
+        }
+
+        // 重置演示
+        function resetDemo() {
+            currentStep = 0;
+            isAutoPlaying = false;
+            isExecuting = false;
+            document.getElementById('messagesContainer').innerHTML = '';
+            updateStepsDisplay();
+            // 重置测试目标信息
+            document.getElementById('targetFunctionName').textContent = '-';
+            document.getElementById('targetFilePath').textContent = '-';
+            document.getElementById('targetInitialCoverage').textContent = '-';
+            document.getElementById('targetCurrentCoverage').textContent = '-';
+            document.getElementById('sendButton').disabled = false;
+        }
+
+        // 切换自动播放
+        function toggleAutoPlay() {
+            isAutoPlaying = !isAutoPlaying;
+            const button = document.getElementById('autoPlayButton');
+            button.textContent = isAutoPlaying ? '⏸️ 暂停' : '▶️ 继续';
+            
+            // 如果重新开启自动播放且正在执行，继续执行
+            if (isAutoPlaying && isExecuting && currentStep > 0 && currentStep < workflowSteps.length) {
+                continueWorkflow();
+            }
+        }
+
+        // 继续执行工作流
+        async function continueWorkflow() {
+            if (!isAutoPlaying) return;
+            
+            for (let i = currentStep; i < workflowSteps.length; i++) {
+                const step = workflowSteps[i];
+                currentStep = i + 1;
+
+                // 更新步骤显示
+                updateStepsDisplay();
+
+
+                // 添加派发消息
+                await addDispatchMessage(step.agent, 300);
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // 添加思考中状态
+                await addThinkingMessage(200);
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // 添加工具调用消息
+                if (step.toolCall) {
+                    const executingDiv = await addToolExecutingMessage(step.toolCall.name, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    executingDiv.remove();
+                    await addMessage('assistant', `执行工具调用：`, step.toolCall, 200);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    // 添加agent回复
+                    if (step.agentReply) {
+                        await addMessage('assistant', step.agentReply, null, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                } else if (step.toolCalls) {
+                    for (let j = 0; j < step.toolCalls.length; j++) {
+                        const toolCall = step.toolCalls[j];
+                        const executingDiv = await addToolExecutingMessage(toolCall.name, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1200));
+                        executingDiv.remove();
+                        await addMessage('assistant', `执行工具调用：`, toolCall, 200);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    
+                    // 添加agent回复
+                    if (step.agentReply) {
+                        await addMessage('assistant', step.agentReply, null, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                }
+
+                // 添加生成的SQL
+                if (step.generatedSQL) {
+                    await addThinkingMessage(300);
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    let sqlText = `**生成的SQL测试用例：**\n\`\`\`sql\n`;
+                    step.generatedSQL.forEach(sql => {
+                        sqlText += `${sql}\n`;
+                    });
+                    sqlText += `\`\`\``;
+                    await addMessage('assistant', sqlText, null, 200);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+
+                // 添加关键发现
+                if (step.findings) {
+                    await addThinkingMessage(300);
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    let findingsText = `**关键发现：**\n`;
+                    step.findings.forEach(f => {
+                        findingsText += `• ${f}\n`;
+                    });
+                    await addMessage('assistant', findingsText, null, 200);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+
+                // 添加结果消息（如果有agentReply，优先使用agentReply）
+                if (step.agentReply && !step.toolCall && !step.toolCalls) {
+                    await addMessage('assistant', step.agentReply, null, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                } else if (step.result) {
+                    await addMessage('assistant', `${step.result.message}\n${step.result.summary || ''}`, null, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+
+                // 更新测试目标信息
+                if (step.toolCall && step.toolCall.result && typeof step.toolCall.result.coverage === 'number') {
+                    const result = step.toolCall.result;
+                    updateTargetInfo(result);
+                }
+
+                // 阶段分隔
+                if (i === 3) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+
+                if (step.delay) {
+                    await new Promise(resolve => setTimeout(resolve, step.delay));
+                }
+
+                // 检查是否继续
+                if (!isAutoPlaying) {
+                    break;
+                }
+            }
+
+            // 执行完成
+            if (currentStep >= workflowSteps.length) {
+                isExecuting = false;
+                document.getElementById('sendButton').disabled = false;
+                await addMessage('assistant', `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ **执行完成！**\n\n📊 **最终结果：**\n• 初始覆盖率：80.0% (16/20行)\n• 最终覆盖率：95.0% (19/20行)\n• 覆盖率提升：+15.0% (+3行)\n• 未覆盖行：第2356行（溢出错误处理）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, null, 500);
+            }
+        }
+
+        // 发送消息
+        function handleSend() {
+            const input = document.getElementById('inputTextarea');
+            const message = input.value.trim();
+            
+            if (!message || isExecuting) return;
+
+            // 添加用户消息
+            addMessage('user', message);
+            input.value = '';
+            document.getElementById('sendButton').disabled = true;
+            isExecuting = true;
+
+            // 开始执行流程
+            executeWorkflow();
+        }
+
+        // 格式化工具调用结果
+        function formatToolResult(toolName, result) {
+            if (typeof result === 'string') {
+                return result;
+            }
+            if (toolName === 'Collect_Coverage' && result.coverage !== undefined) {
+                // 格式化 Collect_Coverage 的结果
+                const r = result;
+                return `{\n  coverage: ${r.coverage},\n  covered_lines: ${r.covered_lines},\n  total_lines: ${r.total_lines},\n  function_name: "${r.function_name}",\n  file_path: "${r.file_path}",\n  status: "${r.status}",\n  error_message: "${r.error_message || ''}",\n  gcov_content: "${r.gcov_content ? r.gcov_content.substring(0, 300).replace(/\n/g, '\\n').replace(/"/g, '\\"') + '...' : ''}"\n}`;
+            }
+            if (toolName === 'Search_Nearest_Seed' && result.status !== undefined) {
+                const r = result;
+                return `{\n  status: "${r.status}",\n  error_message: "${r.error_message || ''}",\n  seed_sql: "${r.seed_sql ? r.seed_sql.replace(/\n/g, '\\n').replace(/"/g, '\\"') : ''}",\n  call_chain: ${JSON.stringify(r.call_chain)},\n  distance: ${r.distance},\n  nearest_function: "${r.nearest_function}"\n}`;
+            }
+            if (toolName === 'Run_SQL_Test' && result.status !== undefined) {
+                const r = result;
+                return `{\n  status: "${r.status}",\n  error_message: "${r.error_message || ''}",\n  executed: ${r.executed},\n  raw_result: "${r.raw_result ? r.raw_result.replace(/\n/g, '\\n').replace(/"/g, '\\"') : ''}",\n  message: "${r.message || ''}",\n  db_results: "${r.db_results || ''}"\n}`;
+            }
+            if (toolName === 'Get_Code_Context' && result.source_code !== undefined) {
+                const r = result;
+                return `{\n  source_code: "${r.source_code ? r.source_code.substring(0, 200).replace(/\n/g, '\\n').replace(/"/g, '\\"') + '...' : ''}",\n  file_path: "${r.file_path}",\n  line_number: ${r.line_number},\n  name: "${r.name}",\n  type: "${r.type}",\n  status: "${r.status}",\n  error_message: "${r.error_message || ''}"\n}`;
+            }
+            return JSON.stringify(result, null, 2);
+        }
+
+        // 添加消息
+        function addMessage(type, content, toolCall = null, delay = 0) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const container = document.getElementById('messagesContainer');
+                    const messageDiv = document.createElement('div');
+                    messageDiv.className = `message ${type}`;
+                    
+                    let html = `
+                        <div class="message-bubble">
+                            <div class="message-header">
+                                <span>${type === 'user' ? '👤 User' : '🤖 Assistant'}</span>
+                            </div>
+                            <div class="message-content">${content}</div>
+                    `;
+
+                    if (toolCall) {
+                        html += `
+                            <div class="tool-call">
+                                <div class="tool-name">🔧 ${toolCall.name}</div>
+                                <div class="tool-param">参数: ${JSON.stringify(toolCall.params, null, 2)}</div>
+                                ${toolCall.result ? `
+                                    <div class="tool-result">
+                                        结果: ${formatToolResult(toolCall.name, toolCall.result)}
+                                    </div>
+                                ` : ''}
+                            </div>
+                        `;
+                    }
+
+                    html += `</div>`;
+                    messageDiv.innerHTML = html;
+                    container.appendChild(messageDiv);
+                    container.scrollTop = container.scrollHeight;
+                    resolve();
+                }, delay);
+            });
+        }
+
+        // 添加派发消息
+        function addDispatchMessage(agent, delay = 0) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const container = document.getElementById('messagesContainer');
+                    const dispatchDiv = document.createElement('div');
+                    dispatchDiv.className = 'dispatch-message';
+                    dispatchDiv.innerHTML = `
+                        <div class="agent">[Supervisor] 派发 → ${agent}</div>
+                    `;
+                    container.appendChild(dispatchDiv);
+                    container.scrollTop = container.scrollHeight;
+                    resolve();
+                }, delay);
+            });
+        }
+
+        // 添加思考中消息
+        function addThinkingMessage(delay = 0) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const container = document.getElementById('messagesContainer');
+                    const thinkingDiv = document.createElement('div');
+                    thinkingDiv.className = 'message assistant';
+                    thinkingDiv.innerHTML = `
+                        <div class="message-bubble">
+                            <div class="message-header">
+                                <span>🤖 Assistant</span>
+                            </div>
+                            <div class="message-content typing-indicator">
+                                正在思考<span class="typing-dots"><span>.</span><span>.</span><span>.</span></span>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(thinkingDiv);
+                    container.scrollTop = container.scrollHeight;
+                    
+                    // 1秒后移除思考消息
+                    setTimeout(() => {
+                        thinkingDiv.remove();
+                        resolve();
+                    }, 1000);
+                }, delay);
+            });
+        }
+
+        // 添加工具调用执行中消息
+        function addToolExecutingMessage(toolName, delay = 0) {
+            return new Promise((resolve) => {
+                setTimeout(() => {
+                    const container = document.getElementById('messagesContainer');
+                    const toolDiv = document.createElement('div');
+                    toolDiv.className = 'message assistant';
+                    toolDiv.innerHTML = `
+                        <div class="message-bubble">
+                            <div class="message-content">
+                                <div class="tool-call">
+                                    <div class="tool-name">🔧 ${toolName}</div>
+                                    <div class="tool-result" style="color: #faad14;">
+                                        ⏳ 正在执行中...
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    container.appendChild(toolDiv);
+                    container.scrollTop = container.scrollHeight;
+                    resolve(toolDiv);
+                }, delay);
+            });
+        }
+
+        // 执行工作流
+        async function executeWorkflow() {
+            // 添加初始响应
+            await addMessage('assistant', '好的，我将开始执行 dcosd 函数的代码覆盖率提升流程。\n\n让我逐步执行每个步骤...', null, 500);
+            await new Promise(resolve => setTimeout(resolve, 1000));
+
+            for (let i = 0; i < workflowSteps.length; i++) {
+                const step = workflowSteps[i];
+                currentStep = i + 1;
+
+                // 更新步骤显示
+                updateStepsDisplay();
+
+
+                // 添加派发消息
+                await addDispatchMessage(step.agent, 300);
+                await new Promise(resolve => setTimeout(resolve, 500));
+
+                // 添加思考中状态
+                await addThinkingMessage(200);
+                await new Promise(resolve => setTimeout(resolve, 800));
+
+                // 添加工具调用消息（分步执行）
+                if (step.toolCall) {
+                    // 先显示执行中
+                    const executingDiv = await addToolExecutingMessage(step.toolCall.name, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    // 移除执行中，显示结果
+                    executingDiv.remove();
+                    await addMessage('assistant', `执行工具调用：`, step.toolCall, 200);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                    
+                    // 添加agent回复
+                    if (step.agentReply) {
+                        await addMessage('assistant', step.agentReply, null, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                } else if (step.toolCalls) {
+                    for (let j = 0; j < step.toolCalls.length; j++) {
+                        const toolCall = step.toolCalls[j];
+                        // 先显示执行中
+                        const executingDiv = await addToolExecutingMessage(toolCall.name, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1200));
+                        
+                        // 移除执行中，显示结果
+                        executingDiv.remove();
+                        await addMessage('assistant', `执行工具调用：`, toolCall, 200);
+                        await new Promise(resolve => setTimeout(resolve, 1000));
+                    }
+                    
+                    // 添加agent回复
+                    if (step.agentReply) {
+                        await addMessage('assistant', step.agentReply, null, 300);
+                        await new Promise(resolve => setTimeout(resolve, 1500));
+                    }
+                }
+
+
+                // 添加关键发现
+                if (step.findings) {
+                    await addThinkingMessage(300);
+                    await new Promise(resolve => setTimeout(resolve, 800));
+                    
+                    let findingsText = `**关键发现：**\n`;
+                    step.findings.forEach(f => {
+                        findingsText += `• ${f}\n`;
+                    });
+                    await addMessage('assistant', findingsText, null, 200);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+
+                // 添加结果消息（如果有agentReply，优先使用agentReply）
+                if (step.agentReply && !step.toolCall && !step.toolCalls) {
+                    await addMessage('assistant', step.agentReply, null, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                } else if (step.result) {
+                    await addMessage('assistant', `${step.result.message}\n${step.result.summary || ''}`, null, 300);
+                    await new Promise(resolve => setTimeout(resolve, 1500));
+                }
+
+                // 更新测试目标信息
+                if (step.toolCall && step.toolCall.result && typeof step.toolCall.result.coverage === 'number') {
+                    const result = step.toolCall.result;
+                    updateTargetInfo(result);
+                }
+
+                // 阶段分隔
+                if (i === 3) {
+                    await new Promise(resolve => setTimeout(resolve, 1000));
+                }
+
+
+                // 等待指定时间（如果设置了）
+                if (step.delay) {
+                    await new Promise(resolve => setTimeout(resolve, step.delay));
+                }
+            }
+
+            // 执行完成
+            isExecuting = false;
+            document.getElementById('sendButton').disabled = false;
+            await addMessage('assistant', `\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n✅ **执行完成！**\n\n📊 **最终结果：**\n• 初始覆盖率：80.0% (16/20行)\n• 最终覆盖率：95.0% (19/20行)\n• 覆盖率提升：+15.0% (+3行)\n• 未覆盖行：第2356行（溢出错误处理）\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━`, null, 500);
+        }
+
+        // 更新步骤显示
+        function updateStepsDisplay() {
+            const container = document.getElementById('stepsContainer');
+            container.innerHTML = '';
+
+            workflowSteps.forEach((step, index) => {
+                const stepDiv = document.createElement('div');
+                stepDiv.className = `step-card ${index < currentStep ? 'visible' : ''} ${index === currentStep - 1 ? 'active' : ''}`;
+                
+                let statusIcon = '';
+                if (index < currentStep - 1) {
+                    statusIcon = '<span class="status-indicator completed"></span>';
+                } else if (index === currentStep - 1) {
+                    statusIcon = '<span class="status-indicator running"></span>';
+                } else {
+                    statusIcon = '<span class="status-indicator pending"></span>';
+                }
+
+                stepDiv.innerHTML = `
+                    <div class="step-header">
+                        ${statusIcon}
+                        <span class="step-number">${step.step}</span>
+                        <span class="step-title">${step.title}</span>
+                        <span class="agent-badge">${step.agent}</span>
+                    </div>
+                `;
+                container.appendChild(stepDiv);
+            });
+        }
+
+        // 更新测试目标信息
+        function updateTargetInfo(coverageResult) {
+            if (coverageResult.function_name) {
+                document.getElementById('targetFunctionName').textContent = coverageResult.function_name;
+            }
+            if (coverageResult.file_path) {
+                document.getElementById('targetFilePath').textContent = coverageResult.file_path;
+            }
+            if (coverageResult.coverage !== undefined) {
+                const coverageText = `${coverageResult.coverage}% (${coverageResult.covered_lines}/${coverageResult.total_lines}行)`;
+                if (document.getElementById('targetInitialCoverage').textContent === '-') {
+                    document.getElementById('targetInitialCoverage').innerHTML = coverageText + ' <span class="coverage-badge initial">初始</span>';
+                }
+                document.getElementById('targetCurrentCoverage').innerHTML = coverageText + ' <span class="coverage-badge final">当前</span>';
+            }
+        }
+
+        // 初始化
+        init();
+    </script>
+</body>
+</html>

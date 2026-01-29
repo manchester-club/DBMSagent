@@ -1,0 +1,81 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Logs
+log/
+*.log
+batch_test_all.log
+test_output.log
+test_summary_fix.log
+
+# Test results
+batch_test_results/
+
+# Node modules
+node_modules/
+frontend/node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.bak
+*.cache
+
+# Database
+*.db
+*.sqlite
+
+# Coverage reports
+htmlcov/
+.coverage
+.coverage.*
+coverage.xml
+
+# Neo4j data (if any)
+neo4j/data/
+neo4j/logs/
+
+# PostgreSQL data
+postgresql-*/
+
+# Compiled files
+*.pyc
+*.pyo
