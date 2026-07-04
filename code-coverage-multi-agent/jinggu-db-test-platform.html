@@ -1,0 +1,903 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>金箍数据库系统测试平台</title>
+  <style>
+    :root {
+      --bg: #020b2b;
+      --panel: rgba(3, 21, 66, .76);
+      --panel-strong: rgba(6, 36, 96, .92);
+      --line: rgba(0, 196, 255, .48);
+      --text: #eefbff;
+      --muted: #83c7e9;
+      --cyan: #00e4ff;
+      --green: #13f6a6;
+      --amber: #ffd257;
+      --red: #ff5a6a;
+      --violet: #8da2ff;
+      --grid: rgba(0, 135, 255, .18);
+      --shadow: 0 0 28px rgba(0, 196, 255, .28);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 100%;
+      min-height: 100%;
+      margin: 0;
+      color: var(--text);
+      font-family: "Microsoft YaHei", "Segoe UI", Arial, sans-serif;
+      background: var(--bg);
+    }
+
+    body {
+      overflow: auto;
+      background:
+        radial-gradient(circle at 50% 42%, rgba(0, 111, 255, .24), transparent 36%),
+        radial-gradient(circle at 18% 78%, rgba(0, 228, 255, .13), transparent 30%),
+        radial-gradient(circle at 84% 70%, rgba(19, 246, 166, .10), transparent 26%),
+        linear-gradient(145deg, #020824 0%, #03164a 48%, #02071b 100%);
+    }
+
+    body::before {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background:
+        radial-gradient(circle, rgba(0, 228, 255, .18) 1px, transparent 1.5px),
+        linear-gradient(var(--grid) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid) 1px, transparent 1px);
+      background-size: 8px 8px, 48px 48px, 48px 48px;
+      mask-image: radial-gradient(circle at center, #000 0 68%, transparent 94%);
+    }
+
+    button {
+      color: inherit;
+      font: inherit;
+    }
+
+    .screen {
+      position: relative;
+      min-width: 1280px;
+      min-height: 720px;
+      width: 100vw;
+      height: 100vh;
+      padding: 16px 18px 18px;
+      overflow: hidden;
+    }
+
+    .screen::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(0, 196, 255, .28), transparent 18%, transparent 82%, rgba(0, 196, 255, .28)),
+        linear-gradient(rgba(0, 228, 255, .18), transparent 8%, transparent 92%, rgba(0, 228, 255, .14));
+      opacity: .72;
+    }
+
+    .header {
+      position: relative;
+      z-index: 2;
+      height: 82px;
+      display: grid;
+      grid-template-columns: 300px 1fr 300px;
+      align-items: center;
+      gap: 18px;
+    }
+
+    .header-wing {
+      height: 46px;
+      border: 1px solid rgba(0, 196, 255, .52);
+      background: linear-gradient(90deg, rgba(0, 38, 111, .72), rgba(0, 148, 255, .14));
+      clip-path: polygon(0 0, 88% 0, 100% 50%, 88% 100%, 0 100%);
+      display: flex;
+      align-items: center;
+      padding: 0 18px;
+      color: var(--muted);
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 13px;
+      letter-spacing: .08em;
+    }
+
+    .header-wing.right {
+      justify-content: flex-end;
+      clip-path: polygon(12% 0, 100% 0, 100% 100%, 12% 100%, 0 50%);
+    }
+
+    .title-block {
+      position: relative;
+      height: 76px;
+      display: grid;
+      place-items: center;
+    }
+
+    .title-block::before,
+    .title-block::after {
+      content: "";
+      position: absolute;
+      left: 0;
+      right: 0;
+      height: 1px;
+      background: linear-gradient(90deg, transparent, var(--cyan), transparent);
+      box-shadow: 0 0 16px rgba(0, 228, 255, .72);
+    }
+
+    .title-block::before { top: 6px; }
+    .title-block::after { bottom: 5px; }
+
+    h1 {
+      margin: 0;
+      font-size: 36px;
+      letter-spacing: .12em;
+      color: #fff;
+      text-shadow: 0 0 18px rgba(0, 228, 255, .72), 0 0 3px #fff;
+      white-space: nowrap;
+    }
+
+    .subtitle {
+      position: absolute;
+      bottom: 5px;
+      margin: 0;
+      color: #8cefff;
+      font-family: Consolas, "Microsoft YaHei", monospace;
+      font-size: 12px;
+      letter-spacing: .18em;
+    }
+
+    .grid {
+      position: relative;
+      z-index: 1;
+      height: calc(100vh - 128px);
+      min-height: 592px;
+      display: grid;
+      grid-template-columns: 300px minmax(600px, 1fr) 320px;
+      grid-template-rows: minmax(380px, 1fr) 188px;
+      gap: 14px;
+    }
+
+    .panel {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(4, 33, 92, .84), rgba(2, 14, 45, .76));
+      box-shadow: inset 0 0 26px rgba(0, 228, 255, .10), 0 0 24px rgba(0, 111, 255, .20);
+    }
+
+    .panel::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      border-radius: inherit;
+      background:
+        linear-gradient(90deg, var(--cyan), transparent 24%) top left / 120px 1px no-repeat,
+        linear-gradient(var(--cyan), transparent 24%) top left / 1px 70px no-repeat,
+        linear-gradient(270deg, var(--green), transparent 24%) bottom right / 120px 1px no-repeat,
+        linear-gradient(0deg, var(--green), transparent 24%) bottom right / 1px 70px no-repeat;
+      opacity: .72;
+    }
+
+    .panel-title {
+      height: 38px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0 14px;
+      border-bottom: 1px solid rgba(119, 223, 255, .17);
+      color: #eafcff;
+      font-size: 15px;
+      font-weight: 800;
+      letter-spacing: .04em;
+      background: linear-gradient(90deg, rgba(0, 196, 255, .28), rgba(0, 69, 166, .16) 58%, transparent);
+    }
+
+    .panel-title span {
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      font-weight: 500;
+    }
+
+    .left-stack,
+    .right-stack {
+      display: grid;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .left-stack {
+      grid-column: 1;
+      grid-row: 1;
+      grid-template-rows: 1fr 1.08fr;
+    }
+
+    .right-stack {
+      grid-column: 3;
+      grid-row: 1;
+      grid-template-rows: 1fr 1fr;
+    }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 14px;
+    }
+
+    .metric {
+      min-height: 76px;
+      border: 1px solid rgba(0, 196, 255, .28);
+      border-radius: 7px;
+      background: rgba(0, 25, 78, .48);
+      padding: 10px;
+    }
+
+    .metric strong {
+      display: block;
+      color: var(--cyan);
+      font-family: Consolas, monospace;
+      font-size: 25px;
+      line-height: 1;
+      text-shadow: 0 0 14px rgba(0, 228, 255, .72);
+    }
+
+    .metric em {
+      display: block;
+      margin-top: 9px;
+      color: var(--muted);
+      font-style: normal;
+      font-size: 12px;
+    }
+
+    .source-list {
+      display: grid;
+      gap: 10px;
+      padding: 0 14px 14px;
+    }
+
+    .source {
+      display: grid;
+      grid-template-columns: 42px 1fr auto;
+      gap: 10px;
+      align-items: center;
+      min-height: 48px;
+      border: 1px solid rgba(0, 196, 255, .24);
+      border-radius: 7px;
+      background: rgba(0, 25, 78, .42);
+      padding: 8px;
+    }
+
+    .source-icon {
+      display: grid;
+      place-items: center;
+      width: 34px;
+      height: 34px;
+      border-radius: 6px;
+      background: rgba(0, 228, 255, .14);
+      color: var(--cyan);
+      font-weight: 900;
+      box-shadow: inset 0 0 12px rgba(0, 228, 255, .22);
+    }
+
+    .source b {
+      display: block;
+      font-size: 13px;
+    }
+
+    .source small {
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .source i {
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px var(--green);
+    }
+
+    .radar-wrap {
+      position: relative;
+      height: calc(100% - 38px);
+      min-height: 226px;
+      display: grid;
+      place-items: center;
+    }
+
+    .radar {
+      position: relative;
+      width: 212px;
+      aspect-ratio: 1;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, transparent 0 20%, rgba(0, 228, 255, .16) 21% 22%, transparent 23% 41%, rgba(0, 122, 255, .26) 42% 43%, transparent 44% 63%, rgba(0, 228, 255, .22) 64% 65%, transparent 66%),
+        conic-gradient(from 0deg, rgba(0, 228, 255, .10), rgba(19, 246, 166, .22), rgba(255, 210, 87, .12), rgba(0, 122, 255, .16));
+      border: 1px solid rgba(0, 228, 255, .48);
+      box-shadow: var(--shadow);
+    }
+
+    .radar::before {
+      content: "";
+      position: absolute;
+      inset: 50% 0 auto 50%;
+      width: 50%;
+      height: 2px;
+      transform-origin: left center;
+      background: linear-gradient(90deg, var(--green), transparent);
+      animation: sweep 4s linear infinite;
+    }
+
+    @keyframes sweep {
+      to { transform: rotate(360deg); }
+    }
+
+    .radar-point {
+      position: absolute;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--amber);
+      box-shadow: 0 0 12px var(--amber);
+    }
+
+    .p1 { left: 38%; top: 24%; }
+    .p2 { left: 66%; top: 38%; background: var(--red); box-shadow: 0 0 12px var(--red); }
+    .p3 { left: 26%; top: 61%; background: var(--green); box-shadow: 0 0 12px var(--green); }
+
+    .center {
+      grid-column: 2;
+      grid-row: 1 / 2;
+      min-height: 0;
+      padding: 0;
+    }
+
+    .stage {
+      position: relative;
+      height: calc(100% - 38px);
+      min-height: 342px;
+      overflow: hidden;
+    }
+
+    .stage::before {
+      content: "";
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 520px;
+      height: 520px;
+      transform: translate(-50%, -50%);
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, rgba(0, 228, 255, .18), transparent 58%),
+        conic-gradient(from 30deg, transparent, rgba(0, 122, 255, .24), transparent 36%, rgba(19, 246, 166, .16), transparent 70%);
+      filter: blur(.2px);
+      animation: rotateGlow 18s linear infinite;
+    }
+
+    @keyframes rotateGlow {
+      to { transform: translate(-50%, -50%) rotate(360deg); }
+    }
+
+    .pipeline-svg {
+      position: absolute;
+      inset: 0;
+      width: 100%;
+      height: 100%;
+      opacity: .95;
+    }
+
+    .beam {
+      fill: none;
+      stroke: rgba(0, 130, 190, .50);
+      stroke-width: 2.4;
+      stroke-dasharray: 12 10;
+      animation: dash 3s linear infinite;
+      filter: drop-shadow(0 0 8px rgba(0, 228, 255, .70));
+    }
+
+    .beam.green {
+      stroke: rgba(66, 240, 161, .62);
+      animation-duration: 3.8s;
+    }
+
+    .beam.amber {
+      stroke: rgba(255, 200, 91, .72);
+      animation-duration: 4.2s;
+    }
+
+    @keyframes dash {
+      to { stroke-dashoffset: -88; }
+    }
+
+    .core {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      width: 210px;
+      height: 210px;
+      transform: translate(-50%, -50%);
+      display: grid;
+      place-items: center;
+      border-radius: 50%;
+      border: 1px solid rgba(0, 228, 255, .56);
+      background:
+        radial-gradient(circle, rgba(0, 135, 255, .42), rgba(3, 24, 74, .86) 54%, rgba(1, 12, 40, .92)),
+        repeating-conic-gradient(from 0deg, rgba(0, 228, 255, .20) 0 8deg, transparent 8deg 18deg);
+      box-shadow: 0 0 38px rgba(0, 228, 255, .32), inset 0 0 28px rgba(19, 246, 166, .12);
+    }
+
+    .core::before,
+    .core::after {
+      content: "";
+      position: absolute;
+      border-radius: 50%;
+      border: 1px dashed rgba(0, 228, 255, .52);
+    }
+
+    .core::before { inset: 20px; animation: spin 12s linear infinite; }
+    .core::after { inset: -18px; animation: spin 18s linear reverse infinite; }
+
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+
+    .core-text {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+    }
+
+    .core-text b {
+      display: block;
+      font-size: 26px;
+      letter-spacing: .14em;
+      color: #fff;
+      text-shadow: 0 0 16px rgba(0, 228, 255, .72);
+    }
+
+    .core-text span {
+      display: block;
+      margin-top: 8px;
+      color: var(--green);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+    }
+
+    .module {
+      position: absolute;
+      display: grid;
+      gap: 6px;
+      justify-items: center;
+      width: 150px;
+      min-height: 82px;
+      border: 1px solid rgba(0, 196, 255, .38);
+      border-radius: 8px;
+      background: linear-gradient(180deg, rgba(4, 48, 120, .84), rgba(2, 20, 62, .82));
+      padding: 11px 10px;
+      box-shadow: 0 0 20px rgba(0, 196, 255, .18);
+    }
+
+    .module svg {
+      width: 25px;
+      height: 25px;
+      stroke: var(--cyan);
+      filter: drop-shadow(0 0 8px rgba(0, 228, 255, .68));
+    }
+
+    .module b {
+      font-size: 15px;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .module small {
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 10px;
+      text-align: center;
+    }
+
+    .m1 { left: 7%; top: 12%; }
+    .m2 { left: 7%; top: 58%; }
+    .m3 { right: 8%; top: 12%; }
+    .m4 { right: 8%; top: 58%; }
+    .m5 { left: 50%; top: 5%; transform: translateX(-50%); }
+    .m6 { left: 50%; bottom: 52px; transform: translateX(-50%); }
+
+    .status-ribbon {
+      position: absolute;
+      left: 50%;
+      bottom: 12px;
+      display: flex;
+      gap: 12px;
+      transform: translateX(-50%);
+    }
+
+    .ribbon-item {
+      border: 1px solid rgba(0, 196, 255, .30);
+      border-radius: 999px;
+      background: rgba(2, 26, 77, .68);
+      padding: 8px 13px;
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 12px;
+      white-space: nowrap;
+    }
+
+    .ribbon-item i {
+      display: inline-block;
+      width: 7px;
+      height: 7px;
+      margin-right: 7px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 10px var(--green);
+      vertical-align: 1px;
+    }
+
+    .bars {
+      display: grid;
+      gap: 5px;
+      padding: 2px 14px 6px;
+    }
+
+    .bar-row {
+      display: grid;
+      grid-template-columns: 78px 1fr 42px;
+      align-items: center;
+      gap: 10px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1;
+    }
+
+    .bar-track {
+      height: 7px;
+      border-radius: 99px;
+      background: rgba(0, 26, 80, .72);
+      overflow: hidden;
+    }
+
+    .bar {
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, var(--cyan), var(--green));
+      box-shadow: 0 0 12px rgba(0, 228, 255, .58);
+    }
+
+    .events {
+      display: grid;
+      gap: 9px;
+      padding: 0 14px 14px;
+    }
+
+    .event {
+      display: grid;
+      grid-template-columns: auto 1fr auto;
+      gap: 10px;
+      align-items: center;
+      border-bottom: 1px solid rgba(119, 223, 255, .12);
+      padding: 7px 0;
+      font-size: 12px;
+    }
+
+    .event code {
+      color: var(--cyan);
+      font-family: Consolas, monospace;
+    }
+
+    .event span {
+      color: var(--muted);
+    }
+
+    .pill {
+      border: 1px solid rgba(0, 196, 255, .24);
+      border-radius: 999px;
+      padding: 3px 8px;
+      font-size: 11px;
+      color: var(--green);
+      background: rgba(66, 240, 161, .08);
+    }
+
+    .pill.warn {
+      color: var(--amber);
+      background: rgba(255, 200, 91, .08);
+    }
+
+    .rings {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      padding: 8px 14px 4px;
+    }
+
+    .ring {
+      display: grid;
+      place-items: center;
+      gap: 4px;
+    }
+
+    .donut {
+      width: 50px;
+      height: 50px;
+      border-radius: 50%;
+      background:
+        radial-gradient(circle, #031a52 0 55%, transparent 56%),
+        conic-gradient(var(--cyan) calc(var(--v) * 1%), rgba(0, 43, 112, .72) 0);
+      display: grid;
+      place-items: center;
+      color: var(--text);
+      font-family: Consolas, monospace;
+      font-size: 13px;
+      box-shadow: inset 0 0 14px rgba(0, 228, 255, .18), 0 0 12px rgba(0, 228, 255, .18);
+    }
+
+    .ring span {
+      color: var(--muted);
+      font-size: 11px;
+    }
+
+    .bottom {
+      grid-column: 1 / 4;
+      display: grid;
+      grid-template-columns: 1.15fr .85fr;
+      gap: 14px;
+      min-height: 0;
+    }
+
+    .table {
+      padding: 8px 14px 14px;
+    }
+
+    .row {
+      display: grid;
+      grid-template-columns: 1.1fr .7fr .8fr .5fr;
+      gap: 12px;
+      align-items: center;
+      min-height: 28px;
+      border-bottom: 1px solid rgba(0, 196, 255, .16);
+      color: #d9f8ff;
+      font-size: 12px;
+    }
+
+    .row.head {
+      color: var(--muted);
+      font-family: Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .heat {
+      height: calc(100% - 38px);
+      display: grid;
+      grid-template-columns: repeat(8, 1fr);
+      gap: 8px;
+      padding: 14px;
+    }
+
+    .heat-cell {
+      min-height: 45px;
+      border: 1px solid rgba(0, 196, 255, .20);
+      border-radius: 6px;
+      background: rgba(0, 35, 96, .52);
+      display: grid;
+      place-items: center;
+      color: #d9f8ff;
+      font-family: Consolas, monospace;
+      font-size: 11px;
+    }
+
+    .heat-cell.hot {
+      background: rgba(255, 90, 106, .22);
+      border-color: rgba(255, 90, 106, .50);
+      box-shadow: 0 0 14px rgba(255, 90, 106, .28);
+    }
+
+    .heat-cell.mid {
+      background: rgba(255, 210, 87, .18);
+      border-color: rgba(255, 210, 87, .45);
+    }
+
+    .ticker {
+      position: absolute;
+      left: 18px;
+      right: 18px;
+      bottom: 4px;
+      display: flex;
+      gap: 24px;
+      color: rgba(190, 240, 255, .72);
+      font-family: Consolas, monospace;
+      font-size: 11px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .ticker span {
+      animation: ticker 18s linear infinite;
+    }
+
+    @keyframes ticker {
+      from { transform: translateX(40px); }
+      to { transform: translateX(-420px); }
+    }
+
+    @media (max-width: 1279px), (max-height: 719px) {
+      .screen {
+        width: 1280px;
+        height: 720px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <main class="screen">
+    <header class="header">
+      <div class="header-wing">DB TESTING / SEMANTIC LAB</div>
+      <div class="title-block">
+        <h1>金箍数据库系统测试平台</h1>
+        <p class="subtitle">多维特征 · 语义定位 · 知识检索 · 测试生成</p>
+      </div>
+      <div class="header-wing right"><span id="clock">2026-07-04 00:00:00</span></div>
+    </header>
+
+    <section class="grid">
+      <div class="left-stack">
+        <section class="panel">
+          <div class="panel-title">全域运行指标 <span>OVERVIEW</span></div>
+          <div class="metrics">
+            <div class="metric"><strong>12,486</strong><em>累计语料样本</em></div>
+            <div class="metric"><strong>384</strong><em>Bug 知识条目</em></div>
+            <div class="metric"><strong>91.7%</strong><em>语义召回率</em></div>
+            <div class="metric"><strong>2,048</strong><em>生成测试用例</em></div>
+          </div>
+          <div class="source-list">
+            <div class="source"><div class="source-icon">SQL</div><div><b>SQLite / MySQL</b><small>seed corpus online</small></div><i></i></div>
+            <div class="source"><div class="source-icon">GH</div><div><b>Issue 与 Commit</b><small>repair signal synced</small></div><i></i></div>
+            <div class="source"><div class="source-icon">DB</div><div><b>openGauss 回归库</b><small>template extraction</small></div><i></i></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">缺陷感知雷达 <span>BUG RADAR</span></div>
+          <div class="radar-wrap">
+            <div class="radar">
+              <i class="radar-point p1"></i>
+              <i class="radar-point p2"></i>
+              <i class="radar-point p3"></i>
+            </div>
+          </div>
+        </section>
+      </div>
+
+      <section class="panel center">
+        <div class="panel-title">平台核心链路 <span>CORE PIPELINE</span></div>
+        <div class="stage">
+          <svg class="pipeline-svg" viewBox="0 0 720 420" preserveAspectRatio="none" aria-hidden="true">
+            <path class="beam" d="M110 82 C235 95, 260 170, 360 210 C462 248, 500 325, 612 338"></path>
+            <path class="beam green" d="M110 338 C230 310, 260 244, 360 210 C470 168, 500 96, 612 82"></path>
+            <path class="beam amber" d="M360 48 C360 120, 360 166, 360 210 C360 262, 360 314, 360 374"></path>
+            <path class="beam" d="M110 210 C188 210, 265 210, 360 210 C450 210, 538 210, 612 210"></path>
+          </svg>
+
+          <div class="core">
+            <div class="core-text">
+              <b>金箍引擎</b>
+              <span>SEMANTIC TEST CORE</span>
+            </div>
+          </div>
+
+          <div class="module m1">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 5c0-2 16-2 16 0v10c0 2-16 2-16 0z"/><path d="M4 5v5c0 2 16 2 16 0"/></svg>
+            <b>语料接入</b><small>Corpus Hub</small>
+          </div>
+          <div class="module m2">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M4 4h16v6H4zM4 14h16v6H4z"/><path d="M8 7h.01M8 17h.01"/></svg>
+            <b>特征抽取</b><small>6D Feature</small>
+          </div>
+          <div class="module m3">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 3l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>
+            <b>Bug 知识库</b><small>Knowledge Base</small>
+          </div>
+          <div class="module m4">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M8 21h8"/><path d="M12 17v4"/><path d="M7 4h10v13H7z"/><path d="M9 8h6M9 12h4"/></svg>
+            <b>测试生成</b><small>Coverage / Mutation</small>
+          </div>
+          <div class="module m5">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M12 2v4M12 18v4M2 12h4M18 12h4"/><circle cx="12" cy="12" r="5"/></svg>
+            <b>语义定位</b><small>Defect Localization</small>
+          </div>
+          <div class="module m6">
+            <svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M5 12l5 5L20 7"/><path d="M4 4h16v16H4z"/></svg>
+            <b>回归验证</b><small>Oracle Check</small>
+          </div>
+
+          <div class="status-ribbon">
+            <div class="ribbon-item"><i></i>LLM Mutator Ready</div>
+            <div class="ribbon-item"><i></i>GraphQL Schema Indexed</div>
+            <div class="ribbon-item"><i></i>Seed Cluster Active</div>
+          </div>
+        </div>
+      </section>
+
+      <div class="right-stack">
+        <section class="panel">
+          <div class="panel-title">测试生成态势 <span>TESTCASE GEN</span></div>
+          <div class="rings">
+            <div class="ring"><div class="donut" style="--v:82">82%</div><span>覆盖引导</span></div>
+            <div class="ring"><div class="donut" style="--v:69">69%</div><span>Bug 引导</span></div>
+            <div class="ring"><div class="donut" style="--v:94">94%</div><span>可达验证</span></div>
+          </div>
+          <div class="bars">
+            <div class="bar-row"><span>Uncovered</span><div class="bar-track"><div class="bar" style="width: 72%"></div></div><b>72</b></div>
+            <div class="bar-row"><span>Seed</span><div class="bar-track"><div class="bar" style="width: 86%"></div></div><b>128</b></div>
+            <div class="bar-row"><span>Mutation</span><div class="bar-track"><div class="bar" style="width: 64%"></div></div><b>64</b></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">实时诊断流 <span>LIVE STREAM</span></div>
+          <div class="events">
+            <div class="event"><code>14:32:08</code><span>召回相似缺陷 Top N</span><b class="pill">OK</b></div>
+            <div class="event"><code>14:32:13</code><span>生成 SQL 变异样例</span><b class="pill warn">RUN</b></div>
+            <div class="event"><code>14:32:21</code><span>路径可达性验证</span><b class="pill">OK</b></div>
+            <div class="event"><code>14:32:29</code><span>语义诊断摘要入库</span><b class="pill">OK</b></div>
+            <div class="event"><code>14:32:41</code><span>回归模板同步</span><b class="pill warn">RUN</b></div>
+          </div>
+        </section>
+      </div>
+
+      <section class="bottom">
+        <section class="panel">
+          <div class="panel-title">测试任务队列 <span>EXECUTION QUEUE</span></div>
+          <div class="table">
+            <div class="row head"><span>CASE</span><span>MODULE</span><span>STRATEGY</span><span>STATE</span></div>
+            <div class="row"><span>TC-DB-2048</span><span>Query Optimizer</span><span>Coverage-guided</span><b class="pill warn">RUN</b></div>
+            <div class="row"><span>TC-DB-2049</span><span>Executor</span><span>Bug-guided Mutation</span><b class="pill">PASS</b></div>
+            <div class="row"><span>TC-DB-2050</span><span>Auth Guard</span><span>Semantic-aware</span><b class="pill warn">RUN</b></div>
+            <div class="row"><span>TC-DB-2051</span><span>Storage Engine</span><span>Nearest Seed</span><b class="pill">PASS</b></div>
+          </div>
+        </section>
+
+        <section class="panel">
+          <div class="panel-title">模块风险热力 <span>RISK HEATMAP</span></div>
+          <div class="heat">
+            <div class="heat-cell">SQL</div><div class="heat-cell mid">Parser</div><div class="heat-cell">Plan</div><div class="heat-cell hot">Opt</div>
+            <div class="heat-cell">Exec</div><div class="heat-cell mid">Tx</div><div class="heat-cell hot">Auth</div><div class="heat-cell">Store</div>
+            <div class="heat-cell mid">Index</div><div class="heat-cell">Join</div><div class="heat-cell">View</div><div class="heat-cell mid">DDL</div>
+            <div class="heat-cell">DML</div><div class="heat-cell hot">Trace</div><div class="heat-cell">Log</div><div class="heat-cell mid">Oracle</div>
+          </div>
+        </section>
+      </section>
+    </section>
+
+    <div class="ticker">
+      <span>Feature Knowledge Extraction · Bug Knowledge Retrieval · LLM-based Bug Diagnosis · Seed Cluster · Reachable Testcase · Regression Oracle · </span>
+      <span>Feature Knowledge Extraction · Bug Knowledge Retrieval · LLM-based Bug Diagnosis · Seed Cluster · Reachable Testcase · Regression Oracle · </span>
+    </div>
+  </main>
+
+  <script>
+    const clock = document.querySelector("#clock");
+
+    function pad(value) {
+      return String(value).padStart(2, "0");
+    }
+
+    function updateClock() {
+      const now = new Date();
+      clock.textContent = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`;
+    }
+
+    updateClock();
+    setInterval(updateClock, 1000);
+  </script>
+</body>
+</html>
