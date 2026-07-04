@@ -66,12 +66,12 @@ Supervisor
 
 ## 可视化页面
 
-项目包含两个静态可视化页面：
+项目包含两个可视化页面：
 
 - `code-coverage-multi-agent/dcosd_workflow_ui.html`：Agent 执行流程演示页面。
 - `code-coverage-multi-agent/jinggu-db-test-platform.html`：金箍数据库系统测试平台大屏。
 
-大屏页面为纯静态 HTML，可以直接用浏览器打开，不需要额外构建步骤。
+
 
 ## 快速开始
 
