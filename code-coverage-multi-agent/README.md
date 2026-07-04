@@ -84,6 +84,8 @@ test_agent/
 ├── batch_test_functions.py        # 批量测试脚本
 ├── dcosd_workflow_ui.html         # UI演示页面
 ├── jinggu-db-test-platform.html   # 金箍数据库系统测试平台大屏
+├── assets/
+│   └── jinggu-db-test-platform.png # 大屏预览截图
 ├── 待测函数集合.md                 # 待测函数列表
 ├── CORRECT_AGENT_WORKFLOW.md      # 正确工作流程文档
 ├── AGENT_ARCHITECTURE_AND_WORKFLOW.md  # Agent架构文档
@@ -155,9 +157,14 @@ python3 batch_test_functions.py --skip-zero
 
 详细流程说明请参考 `CORRECT_AGENT_WORKFLOW.md`。
 
+## 平台大屏预览
+
+![金箍数据库系统测试平台大屏](assets/jinggu-db-test-platform.png)
+
+大屏页面文件：`jinggu-db-test-platform.html`
+
 ## 文档
 
-- [金箍数据库系统测试平台大屏](jinggu-db-test-platform.html) - 数据库系统测试平台可视化页面
 - [正确工作流程](CORRECT_AGENT_WORKFLOW.md) - 详细的工作流程说明
 - [Agent架构和工作流程](AGENT_ARCHITECTURE_AND_WORKFLOW.md) - Agent架构和交互说明
 - [dcosd函数工作流程](DCOSD_FUNCTION_CORRECT_WORKFLOW.md) - 具体案例演示
