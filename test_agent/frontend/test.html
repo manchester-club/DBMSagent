@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test</title>
+    <style>
+        body { background: #0a0e27; color: #e8e8e8; padding: 20px; }
+    </style>
+</head>
+<body>
+    <h1>测试页面</h1>
+    <p>如果看到这个页面，说明服务器正常运行</p>
+    <script>
+        fetch('http://localhost:5173/src/main.tsx')
+            .then(r => r.text())
+            .then(text => {
+                document.body.innerHTML += '<h2>main.tsx 加载成功</h2>';
+                document.body.innerHTML += '<pre style="background: #141829; padding: 10px; overflow: auto;">' + text.substring(0, 500) + '</pre>';
+            })
+            .catch(e => {
+                document.body.innerHTML += '<h2 style="color: red;">错误: ' + e.message + '</h2>';
+            });
+    </script>
+</body>
+</html>

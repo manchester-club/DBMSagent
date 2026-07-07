@@ -1,0 +1,6 @@
+langgraph>=0.0.40
+langchain>=0.1.0
+langchain-core>=0.1.0
+langchain-community>=0.0.20
+langchain-ollama>=0.1.0
+neo4j>=5.0.0
