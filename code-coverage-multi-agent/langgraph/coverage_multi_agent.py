@@ -62,10 +62,14 @@ class State(TypedDict):
 # LLMs
 # ---------------------------------------------------------------------------
 
-# DeepSeek API 配置
-DEEPSEEK_API_KEY = "sk-c15a9ceabf774ecf9b2aac355ef5f8bc"
-DEEPSEEK_BASE_URL = "https://api.deepseek.com"
-LLM_MODEL = "deepseek-chat"
+# LLM 配置：只从环境变量读取，不要把密钥写进仓库。
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY") or ""
+DEEPSEEK_BASE_URL = (
+    os.environ.get("DEEPSEEK_BASE_URL")
+    or os.environ.get("OPENAI_BASE_URL")
+    or "https://api.deepseek.com"
+)
+LLM_MODEL = os.environ.get("LLM_MODEL") or "deepseek-chat"
 
 llm_base = ChatOpenAI(
     model=LLM_MODEL,
