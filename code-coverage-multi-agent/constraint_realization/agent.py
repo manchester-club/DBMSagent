@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
+from .concolic import InputRealization, plan_from_realization, realize
 from .extract import Target, extract, extract_from_gcov_line
 from .instantiate import Plan, instantiate
 from .leftover import default_gcov_roots, scan_guard_gaps
@@ -34,8 +35,6 @@ VerifyFn = Callable[[Target], Any]
 
 _KIND_VERDICT = {
     "ENV": "CONDITIONALLY",
-    "UNREALIZABLE": "UNREALIZABLE UNDER A",
-    "PC_A": "INPUT_REALIZATION",
     "NAMED_SQL": "NAMED_SQL",
     "SKIP": "SKIP",
 }
@@ -45,8 +44,14 @@ scan_leftovers()
   Group catalog/adt leftovers that hit the guard and missed the then-block.
 
 recover_family(family_id)
-  Program analysis: write-true → callers → grammar. Returns sql_template.
+  PC_V only. Write-true → callers → grammar. Returns sql_template.
   REQUIRED before instantiate_plan. Do not invent SQL from leftover C.
+  Do not use this for PC_A.
+
+realize_input(family_id)
+  PC_A leftover-branch concolic: negate the last decision over alphabet A.
+  Pointer/GUC conjuncts are discharged by live callers (B), not as free SMT vars.
+  Catalog conjuncts are rejected (use recover_family). Slice SAT is not coverage.
 
 instantiate_plan(family_id, feedback?)
   Fill legal SQL from the recovered sql_template only.
@@ -59,8 +64,8 @@ verify_family(family_id)
   Compare gcov then-block hits after execute.
 
 record_verdict(family_id, verdict)
-  REALIZABLE | RECOVERED | FAILED | UNKNOWN | CONDITIONALLY |
-  UNREALIZABLE UNDER A | INPUT_REALIZATION | NAMED_SQL | SKIP
+  REALIZABLE | RECOVERED | INPUT_REALIZED | FAILED | UNKNOWN | CONDITIONALLY |
+  UNREALIZABLE UNDER A,E,B | NAMED_SQL | SKIP
 
 finish()
   Stop when every family has a verdict.
@@ -68,25 +73,31 @@ finish()
 
 SUPERVISOR_SYSTEM = f"""You are the constraint-realization supervisor.
 
-Method: leftover families → split PC_A/PC_V/ENV → recover actuation relation
-by program analysis → instantiate SQL from that relation → execute → verify.
+One method, two solvers. Leftover families split PC_A / PC_V / ENV:
+- PC_V: recover actuation relation by program analysis, then instantiate.
+- PC_A: leftover-branch concolic over alphabet A (realize_input).
+Standard concolic must NOT symbolize catalog memory (inhdetachpending etc.).
 
 You MUST:
 - Call scan_leftovers first (unless a single target is already loaded).
-- For ENV / NAMED_SQL / PC_A / UNREALIZABLE / SKIP: record_verdict from the
-  split. Do not recover those.
+- For ENV / NAMED_SQL / SKIP: record_verdict from the split. Do not recover
+  or realize those.
 - For PC_V: call recover_family BEFORE instantiate_plan. Never invent SQL
   from leftover C, function names, or write-site text.
+- For PC_A (and UNREALIZABLE ABI leftovers): call realize_input. Do not
+  recover_family. Do not record INPUT_REALIZED without a SAT model over A.
+  If realize_input reports sat_on_slice but realizable_under_callers=false,
+  record_verdict UNREALIZABLE UNDER A,E,B (slice HIT ≠ coverage).
 - instantiate_plan fills identifiers/session order from sql_template only.
 - If execute_plan or verify_family fails, instantiate_plan again with
   feedback set to the error (at most 3 attempts per family), then
   record_verdict FAILED if still unsuccessful.
-- If execute is disabled, record_verdict RECOVERED after a successful
-  instantiate_plan. Do not call execute_plan.
+- If execute is disabled: PC_V → RECOVERED after instantiate_plan;
+  PC_A → INPUT_REALIZED after realize_input SAT. Do not call execute_plan.
 - After every family has a verdict, call finish.
 
 You never recover write-sites yourself. recover_family is the only source
-of sql_template.
+of sql_template. realize_input is the only PC_A solver.
 
 Reply in this form:
 Thought: <one sentence>
@@ -126,6 +137,7 @@ class FamilyRecord:
     reasons: List[str]
     target: Target
     relation: Optional[ActuationRelation] = None
+    realization: Optional[InputRealization] = None
     plan: Optional[Plan] = None
     before: Optional[Dict[int, str]] = None
     last_execute: Optional[Dict[str, Any]] = None
@@ -195,6 +207,7 @@ def _args_from_text(action: str, raw: str) -> dict:
         "instantiate_plan",
         "execute_plan",
         "verify_family",
+        "realize_input",
     }:
         return {"family_id": token}
     if action == "record_verdict" and " " in token:
@@ -315,6 +328,26 @@ class ToolBox:
         out["family_id"] = family_id
         return out
 
+    def realize_input(self, family_id: str) -> Dict[str, Any]:
+        rec = self._fam(family_id)
+        if rec.kind == "PC_V" and rec.target.catalog:
+            return {
+                "error": (
+                    "conjunct not in alphabet A; use recover_family. "
+                    "Do not SMT-symbolize catalog memory."
+                ),
+                "kind": rec.kind,
+            }
+        ir = realize(self.cfg.pg_src, rec.target)
+        rec.realization = ir
+        rec.attempts += 1
+        out = ir.public()
+        out["family_id"] = family_id
+        if ir.status == "SAT" and ir.sql:
+            rec.plan = plan_from_realization(ir)
+            out["plan"] = _plan_public(rec.plan)
+        return out
+
     def instantiate_plan(self, family_id: str, feedback: str = "") -> Dict[str, Any]:
         rec = self._fam(family_id)
         if rec.relation is None:
@@ -406,7 +439,13 @@ class ToolBox:
         }
 
     def dispatch(self, name: str, args: Optional[dict] = None) -> Dict[str, Any]:
-        aliases = {"scan": "scan_leftovers", "recover": "recover_family", "instantiate": "instantiate_plan"}
+        aliases = {
+            "scan": "scan_leftovers",
+            "recover": "recover_family",
+            "instantiate": "instantiate_plan",
+            "concolic": "realize_input",
+            "realize": "realize_input",
+        }
         name = aliases.get(name, name)
         fn = getattr(self, name, None)
         if not callable(fn) or name.startswith("_"):
@@ -461,6 +500,10 @@ class ConstraintAgent:
                 entry["wait_for_lockers"] = rec.relation.wait_for_lockers
                 entry["evidence"] = rec.relation.evidence
                 entry["notes"] = rec.relation.notes
+            if rec.realization is not None:
+                entry["realization"] = rec.realization.public()
+                entry["sat_on_slice"] = rec.realization.sat_on_slice
+                entry["sql"] = rec.realization.sql
             if rec.plan is not None:
                 entry["plan_via"] = rec.plan.via
                 entry["writer"] = rec.plan.writer.statements
@@ -477,7 +520,10 @@ class ConstraintAgent:
             "pg_src": str(self.cfg.pg_src),
             "family_count": len(families),
             "pc_v_recovered": sum(
-                1 for f in families if f.get("verdict") in {"RECOVERED", "REALIZABLE"}
+                1 for f in families if f.get("verdict") in {"RECOVERED", "REALIZABLE"} and f.get("kind") == "PC_V"
+            ),
+            "pc_a_realized": sum(
+                1 for f in families if f.get("verdict") in {"INPUT_REALIZED", "REALIZABLE"} and f.get("kind") == "PC_A"
             ),
             "families": families,
             "trace": self.state.trace,
@@ -504,7 +550,7 @@ def _kickoff(cfg: AgentConfig) -> str:
         f"pg_src={cfg.pg_src}\n"
         f"execute={exec_s}\n"
         f"{extra}"
-        "Scan, recover each PC_V family, instantiate, "
+        "Scan, recover each PC_V family, concolic-realize each PC_A family, "
         f"{'execute and verify, ' if exec_s == 'enabled' else ''}"
         "record a verdict, then finish."
     )
@@ -519,10 +565,54 @@ def _call_supervisor(cfg: AgentConfig, messages: List[dict], system: str) -> str
     return complete_chat(system=system, messages=messages, temperature=0.1)
 
 
+def _drive_pc_a(agent: ConstraintAgent, family_id: str) -> None:
+    rec = agent.state.families[family_id]
+    obs = agent.tools.realize_input(family_id)
+    agent.note("leftover-branch concolic over A", "realize_input", {"family_id": family_id}, obs)
+    if obs.get("error"):
+        v = agent.tools.record_verdict(family_id, "UNKNOWN")
+        agent.note("realize_input failed", "record_verdict", {"family_id": family_id}, v)
+        return
+    if obs.get("status") == "UNREALIZABLE" or (
+        obs.get("sat_on_slice") and not obs.get("realizable_under_callers")
+    ):
+        v = agent.tools.record_verdict(family_id, "UNREALIZABLE UNDER A,E,B")
+        agent.note("slice SAT is not coverage", "record_verdict", {"family_id": family_id}, v)
+        return
+    if obs.get("status") != "SAT" or rec.plan is None:
+        v = agent.tools.record_verdict(family_id, "UNKNOWN")
+        agent.note("no preimage in A", "record_verdict", {"family_id": family_id}, v)
+        return
+    if not agent.cfg.do_execute and agent.cfg.execute_fn is None:
+        v = agent.tools.record_verdict(family_id, "INPUT_REALIZED")
+        agent.note("execute disabled", "record_verdict", {"family_id": family_id}, v)
+        return
+    last_err = ""
+    for _ in range(agent.cfg.max_retries):
+        ex = agent.tools.execute_plan(family_id)
+        agent.note("run input SQL", "execute_plan", {"family_id": family_id}, ex)
+        if ex.get("error") or not ex.get("ok"):
+            last_err = str(ex.get("error") or "execute failed")
+            rec.errors.append(last_err)
+            continue
+        ver = agent.tools.verify_family(family_id)
+        agent.note("gcov then-delta", "verify_family", {"family_id": family_id}, ver)
+        if ver.get("ok") or ex.get("flag_seen_true"):
+            v = agent.tools.record_verdict(family_id, "REALIZABLE")
+            agent.note("covered", "record_verdict", {"family_id": family_id}, v)
+            return
+        last_err = "verify: no then-block gain"
+    v = agent.tools.record_verdict(family_id, "FAILED")
+    agent.note("retries exhausted", "record_verdict", {"family_id": family_id}, v)
+
+
 def drive_family(agent: ConstraintAgent, family_id: str) -> None:
     """Deterministic tool policy for one family (no supervisor LLM)."""
     rec = agent.state.families[family_id]
     if rec.verdict:
+        return
+    if rec.kind in {"PC_A", "UNREALIZABLE"}:
+        _drive_pc_a(agent, family_id)
         return
     if rec.kind != "PC_V":
         obs = agent.tools.record_verdict(family_id, _KIND_VERDICT.get(rec.kind, rec.kind))

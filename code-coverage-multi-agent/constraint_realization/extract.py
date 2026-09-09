@@ -50,6 +50,12 @@ def _resolve(pg_src: Path, spec: str) -> tuple[Path, int, str]:
 def _field_and_catalog(source: str) -> tuple[str, Optional[str]]:
     fields = [f for f in _FIELD.findall(source) if f not in {"t_data", "t_self"}]
     field = fields[-1] if fields else ""
+    if not field:
+        m = re.search(r"\b([A-Za-z_][A-Za-z0-9_]*)\s*(?:==|!=)\s*NULL\b", source)
+        if not m:
+            m = re.search(r"\bNULL\s*(?:==|!=)\s*([A-Za-z_][A-Za-z0-9_]*)\b", source)
+        if m:
+            field = m.group(1)
     form = _FORM.search(source)
     catalog = f"pg_{form.group(1)}" if form else None
     return field, catalog

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import config
+from .concolic import realize
 from .extract import extract, extract_from_gcov_line
 from .instantiate import instantiate
 from .leftover import default_gcov_roots, scan_guard_gaps
@@ -38,8 +39,32 @@ def run_one(pg_src: Path, spec: str, *, do_execute: bool, use_llm: bool = True) 
     }
     _print("EXTRACT", f"{target.rel_path}:{target.line} {target.function}() {target.source}")
     _print("SPLIT", f"{sp.kind}: " + "; ".join(sp.reasons))
+    if sp.kind in {"PC_A", "UNREALIZABLE"}:
+        ir = realize(pg_src, target)
+        rec["realization"] = ir.public()
+        rec["verdict"] = ir.verdict
+        _print("CONCOLIC", json.dumps(ir.public(), indent=2, ensure_ascii=False))
+        if ir.sql:
+            rec["plan"] = {"via": "concolic", "writer": [ir.sql], "model": ir.model}
+            if do_execute:
+                from .execute import execute
+                from .instantiate import plan_from_input_sql
+
+                before = snapshot_then(target)
+                result = execute(plan_from_input_sql(ir.sql))
+                after = snapshot_then(target)
+                ver = compare(before, after, target.line)
+                rec["execute"] = {"ok": result.ok, "log": result.log}
+                rec["verify"] = {"then_gained": ver.then_gained}
+                rec["verdict"] = "REALIZABLE" if ver.ok or result.ok else "FAILED"
+                _print("VERIFY", rec["verdict"])
+        return rec
     if sp.kind != "PC_V":
-        rec["verdict"] = sp.kind
+        rec["verdict"] = {
+            "ENV": "CONDITIONALLY",
+            "NAMED_SQL": "NAMED_SQL",
+            "SKIP": "SKIP",
+        }.get(sp.kind, sp.kind)
         return rec
     rel = recover(pg_src, target)
     rec["relation"] = {
@@ -150,12 +175,27 @@ def run_all(
                         entry["error"] = str(exc)
             else:
                 entry["verdict"] = "UNKNOWN"
+        elif sp.kind in {"PC_A", "UNREALIZABLE"}:
+            ir = realize(pg_src, target)
+            entry["realization"] = ir.public()
+            entry["sat_on_slice"] = ir.sat_on_slice
+            entry["sql"] = ir.sql
+            entry["verdict"] = ir.verdict
+            if do_execute and ir.sql:
+                try:
+                    from .execute import execute
+                    from .instantiate import plan_from_input_sql
+
+                    result = execute(plan_from_input_sql(ir.sql))
+                    entry["execute_ok"] = result.ok
+                    entry["verdict"] = "REALIZABLE" if result.ok else "FAILED"
+                except Exception as exc:
+                    entry["verdict"] = "UNKNOWN"
+                    entry["error"] = str(exc)
         elif sp.kind == "ENV":
             entry["verdict"] = "CONDITIONALLY"
-        elif sp.kind == "UNREALIZABLE":
-            entry["verdict"] = "UNREALIZABLE UNDER A"
-        elif sp.kind == "PC_A":
-            entry["verdict"] = "INPUT_REALIZATION"
+        elif sp.kind == "NAMED_SQL":
+            entry["verdict"] = "NAMED_SQL"
         else:
             entry["verdict"] = sp.kind
         families.append(entry)
@@ -165,7 +205,12 @@ def run_all(
         "guard_hit_then_miss": len(gaps),
         "kind_counts": dict(kind_counts),
         "family_count": len(families),
-        "pc_v_recovered": sum(1 for f in families if f.get("verdict") in {"RECOVERED", "REALIZABLE"}),
+        "pc_v_recovered": sum(
+            1 for f in families if f.get("kind") == "PC_V" and f.get("verdict") in {"RECOVERED", "REALIZABLE"}
+        ),
+        "pc_a_realized": sum(
+            1 for f in families if f.get("kind") == "PC_A" and f.get("verdict") in {"INPUT_REALIZED", "REALIZABLE"}
+        ),
         "families": families,
     }
     return report
@@ -217,7 +262,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             "AGENT constraint realization",
             f"steps={report.get('steps')} finished={report.get('finished')} "
             f"families={report.get('family_count')} "
-            f"pc_v_recovered={report.get('pc_v_recovered')}",
+            f"pc_v_recovered={report.get('pc_v_recovered')} "
+            f"pc_a_realized={report.get('pc_a_realized')}",
         )
         for fam in report.get("families") or []:
             extra = fam.get("writer") or fam.get("sql_template") or fam["kind"]

@@ -58,6 +58,20 @@ def _setup_objects(template: str, parent: str, child: str, keep: str) -> List[st
     ]
 
 
+def plan_from_input_sql(sql: str, *, notes: Optional[List[str]] = None) -> Plan:
+    """Wrap a concolic model as a one-session SQL plan. No recovered template."""
+    stmt = sql if sql.strip().endswith(";") else sql
+    return Plan(
+        setup=[],
+        teardown=[],
+        holder=Session("holder", "noop", ["SELECT 1"]),
+        writer=Session("writer", "input_realization", [stmt]),
+        observer=Session("observer", "target_read", [stmt]),
+        via="concolic",
+        notes=list(notes or []) + ["solver=leftover-branch-concolic-over-A"],
+    )
+
+
 def instantiate_template(rel: ActuationRelation, prefix: str = "cr_auto") -> Plan:
     if not rel.sql_template:
         raise RuntimeError("no SQL template recovered; refusing to guess an operation")
