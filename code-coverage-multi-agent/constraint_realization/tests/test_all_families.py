@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import unittest
 from pathlib import Path
 
@@ -38,14 +37,37 @@ class SplitAndRecover(unittest.TestCase):
     def test_instantiate_follows_recovered_template_not_hardcoded_detach(self):
         bar = extract(ROOT, "src/backend/catalog/pg_foo.c:18")
         rel = recover(ROOT, bar)
-        plan = instantiate(rel, prefix="t")
+        plan = instantiate(rel, prefix="t", use_llm=False)
         self.assertIn("ENABLE ALWAYS", plan.writer.statements[0])
         self.assertNotIn("DETACH", plan.writer.statements[0])
+
+    def test_llm_instantiator_only_sees_relation(self):
+        bar = extract(ROOT, "src/backend/catalog/pg_foo.c:18")
+        rel = recover(ROOT, bar)
+        seen = {}
+
+        def fake_llm(prompt: str) -> str:
+            seen["prompt"] = prompt
+            return """{
+              "setup": ["CREATE TABLE t_p (a int)"],
+              "holder": ["SELECT 1"],
+              "writer": ["ALTER TABLE t_p ENABLE ALWAYS"],
+              "observer": ["SELECT * FROM t_p"],
+              "teardown": ["DROP TABLE t_p CASCADE"]
+            }"""
+
+        plan = instantiate(rel, prefix="t", completer=fake_llm)
+        self.assertEqual(plan.via, "llm")
+        self.assertIn("ENABLE ALWAYS", plan.writer.statements[0])
+        self.assertNotIn("foopend", seen["prompt"])
+        self.assertNotIn("MarkFooPending", seen["prompt"])
+        self.assertIn("sql_template=", seen["prompt"])
+        self.assertIn("ENABLE ALWAYS", seen["prompt"])
 
 
 class ScanAll(unittest.TestCase):
     def test_all_groups_by_family_and_kind(self):
-        report = run_all(ROOT, do_execute=False)
+        report = run_all(ROOT, do_execute=False, use_llm=False)
         kinds = report["kind_counts"]
         self.assertGreaterEqual(kinds.get("PC_V", 0), 2)
         self.assertGreaterEqual(kinds.get("NAMED_SQL", 0), 1)

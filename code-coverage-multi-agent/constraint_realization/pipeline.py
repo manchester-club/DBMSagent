@@ -22,7 +22,7 @@ def _print(title: str, body: str = "") -> None:
         print(body)
 
 
-def run_one(pg_src: Path, spec: str, *, do_execute: bool) -> Dict[str, Any]:
+def run_one(pg_src: Path, spec: str, *, do_execute: bool, use_llm: bool = True) -> Dict[str, Any]:
     from .execute import execute
     from .verify import compare, snapshot_then
 
@@ -54,14 +54,16 @@ def run_one(pg_src: Path, spec: str, *, do_execute: bool) -> Dict[str, Any]:
         rec["verdict"] = "UNKNOWN"
         return rec
     prefix = f"cr_{int(time.time()) % 100000}"
-    plan = instantiate(rel, prefix=prefix)
+    plan = instantiate(rel, prefix=prefix, use_llm=use_llm)
     rec["plan"] = {
+        "via": plan.via,
         "setup": plan.setup,
         "holder": plan.holder.statements,
         "writer": plan.writer.statements,
         "observer": plan.observer.statements,
+        "notes": plan.notes,
     }
-    _print("INSTANTIATE", "\n".join(plan.writer.statements))
+    _print("INSTANTIATE", f"via={plan.via}\n" + "\n".join(plan.writer.statements))
     if not do_execute:
         rec["verdict"] = "RECOVERED"
         return rec
@@ -76,7 +78,13 @@ def run_one(pg_src: Path, spec: str, *, do_execute: bool) -> Dict[str, Any]:
     return rec
 
 
-def run_all(pg_src: Path, *, do_execute: bool, gcov_roots: Optional[List[Path]] = None) -> Dict[str, Any]:
+def run_all(
+    pg_src: Path,
+    *,
+    do_execute: bool,
+    gcov_roots: Optional[List[Path]] = None,
+    use_llm: bool = True,
+) -> Dict[str, Any]:
     gaps = scan_guard_gaps(pg_src, gcov_roots)
     buckets: Dict[str, list] = defaultdict(list)
     kind_counts: Dict[str, int] = defaultdict(int)
@@ -112,11 +120,27 @@ def run_all(pg_src: Path, *, do_execute: bool, gcov_roots: Optional[List[Path]] 
             entry["notes"] = rel.notes
             if rel.recoverable:
                 entry["verdict"] = "RECOVERED"
-                if do_execute:
+                try:
+                    plan = instantiate(
+                        rel,
+                        prefix=f"cr_{abs(hash(key)) % 100000}",
+                        use_llm=use_llm,
+                    )
+                    entry["plan_via"] = plan.via
+                    entry["writer"] = plan.writer.statements
+                    entry["instantiate_notes"] = plan.notes
+                except Exception as exc:
+                    entry["plan_via"] = "failed"
+                    entry["error"] = str(exc)
+                if do_execute and entry.get("plan_via") not in {None, "failed"}:
                     try:
                         from .execute import execute
 
-                        plan = instantiate(rel, prefix=f"cr_{abs(hash(key)) % 100000}")
+                        plan = instantiate(
+                            rel,
+                            prefix=f"cr_{abs(hash(key)) % 100000}",
+                            use_llm=use_llm,
+                        )
                         result = execute(plan)
                         entry["execute_ok"] = result.ok
                         entry["flag_seen_true"] = result.flag_seen_true
@@ -157,14 +181,22 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--execute", action="store_true", help="run instantiated SQL on PGHOST/PGPORT")
     p.add_argument("--gcov-root", action="append", help="extra .gcov directory (repeatable)")
     p.add_argument("--json-out", help="write report JSON")
+    p.add_argument(
+        "--no-llm",
+        action="store_true",
+        help="use the deterministic template instantiator instead of the LLM",
+    )
     args = p.parse_args(argv)
     pg_src = Path(args.pg_src)
+    use_llm = not args.no_llm
 
     if args.all or not args.target:
         if not args.target:
             args.all = True
         roots = [Path(x) for x in args.gcov_root] if args.gcov_root else default_gcov_roots(pg_src)
-        report = run_all(pg_src, do_execute=args.execute, gcov_roots=roots)
+        report = run_all(
+            pg_src, do_execute=args.execute, gcov_roots=roots, use_llm=use_llm
+        )
         _print(
             "ALL leftover families",
             f"guard-hit/then-miss={report['guard_hit_then_miss']} "
@@ -172,13 +204,15 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"pc_v_recovered={report['pc_v_recovered']}",
         )
         for fam in report["families"]:
+            extra = fam.get("writer") or fam.get("sql_template") or fam["kind"]
+            via = fam.get("plan_via")
+            via_s = f" via={via}" if via else ""
             print(
                 f"  [{fam['verdict']}] {fam['family']}  n={fam['members']}  "
-                f"hits={fam['guard_hits']}  {fam['example']}  "
-                f"{fam.get('sql_template') or fam['kind']}"
+                f"hits={fam['guard_hits']}  {fam['example']}{via_s}  {extra}"
             )
     else:
-        report = run_one(pg_src, args.target, do_execute=args.execute)
+        report = run_one(pg_src, args.target, do_execute=args.execute, use_llm=use_llm)
 
     if args.json_out:
         Path(args.json_out).write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")
