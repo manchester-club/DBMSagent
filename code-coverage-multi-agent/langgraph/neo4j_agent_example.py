@@ -25,9 +25,17 @@ class AgentState(TypedDict):
 class Neo4jAgent:
     """Neo4j智能体"""
     
-    def __init__(self, uri: str = "bolt://173.0.69.2:7687", 
-                 user: str = "neo4j", password: str = "neo4j123"):
-        """初始化Neo4j连接"""
+    def __init__(
+        self,
+        uri: str = None,
+        user: str = None,
+        password: str = None,
+    ):
+        """初始化Neo4j连接。URI / 用户 / 密码从参数或环境变量读取。"""
+        import os
+        uri = uri or os.environ.get("NEO4J_URI") or "bolt://localhost:7687"
+        user = user or os.environ.get("NEO4J_USER") or "neo4j"
+        password = password or os.environ.get("NEO4J_PASSWORD") or ""
         self.driver = GraphDatabase.driver(uri, auth=(user, password))
     
     def close(self):

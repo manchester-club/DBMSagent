@@ -10,8 +10,7 @@ from typing import Annotated, List
 from typing_extensions import TypedDict
 import os
 
-# 设置 Tavily API Key 环境变量
-os.environ["TAVILY_API_KEY"] = "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"
+# TAVILY_API_KEY 必须从环境变量提供，不要写进源码。
 
 # 导入 Tavily 搜索工具
 # 注意：需要安装 langchain-tavily 包: pip install langchain-tavily

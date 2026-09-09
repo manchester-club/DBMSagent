@@ -27,8 +27,15 @@ NEO4J_PASSWORD=your_password
 OLLAMA_BASE_URL=http://localhost:11434
 OLLAMA_MODEL=your_model_name
 
+# LLM（DeepSeek / OpenAI 兼容接口）
+# DEEPSEEK_API_KEY=your_api_key
+# DEEPSEEK_BASE_URL=https://api.deepseek.com
+
 # 或使用OpenAI API
 # OPENAI_API_KEY=your_api_key
+
+# Tavily（chat_bot.py）
+# TAVILY_API_KEY=your_api_key
 ```
 
 ## 3. 确保数据库已配置

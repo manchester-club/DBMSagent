@@ -40,15 +40,17 @@ class Neo4jConnection:
     _instance: Optional['Neo4jConnection'] = None
     _driver: Optional[Driver] = None
     
-    def __new__(cls, uri: str = "bolt://173.0.69.2:7687", 
-                user: str = "neo4j", password: str = "neo4j123"):
+    def __new__(cls, uri: str = None, user: str = None, password: str = None):
         if cls._instance is None:
             cls._instance = super().__new__(cls)
         return cls._instance
     
-    def __init__(self, uri: str = "bolt://173.0.69.2:7687", 
-                 user: str = "neo4j", password: str = "neo4j123"):
+    def __init__(self, uri: str = None, user: str = None, password: str = None):
         if self._driver is None:
+            import os
+            uri = uri or os.environ.get("NEO4J_URI") or "bolt://localhost:7687"
+            user = user or os.environ.get("NEO4J_USER") or "neo4j"
+            password = password or os.environ.get("NEO4J_PASSWORD") or ""
             self._driver = GraphDatabase.driver(uri, auth=(user, password))
     
     @property
