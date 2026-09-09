@@ -117,8 +117,8 @@ Rules:
 """
 
 
-def _relation_prompt(rel: ActuationRelation, prefix: str) -> str:
-    return (
+def _relation_prompt(rel: ActuationRelation, prefix: str, feedback: str = "") -> str:
+    body = (
         f"prefix={prefix}\n"
         f"sql_template={rel.sql_template}\n"
         f"observer_sql={rel.observer_sql}\n"
@@ -129,6 +129,12 @@ def _relation_prompt(rel: ActuationRelation, prefix: str) -> str:
         f"field={rel.field}\n"
         f"evidence={rel.evidence}\n"
     )
+    if feedback:
+        body += (
+            f"previous_attempt_failed={feedback}\n"
+            "Revise identifiers and session order only. Keep sql_template tokens.\n"
+        )
+    return body
 
 
 def _as_str_list(val) -> List[str]:
@@ -183,8 +189,9 @@ def instantiate_llm(
     prefix: str = "cr_auto",
     *,
     completer: Optional[Completer] = None,
+    feedback: str = "",
 ) -> Plan:
-    prompt = _relation_prompt(rel, prefix)
+    prompt = _relation_prompt(rel, prefix, feedback=feedback)
     if completer is not None:
         raw = completer(prompt)
     else:
@@ -199,13 +206,14 @@ def instantiate(
     *,
     use_llm: bool = True,
     completer: Optional[Completer] = None,
+    feedback: str = "",
 ) -> Plan:
     """Default: LLM instantiates from the recovered relation; template is fallback."""
     if not rel.sql_template:
         raise RuntimeError("no SQL template recovered; refusing to guess an operation")
     if use_llm or completer is not None:
         try:
-            plan = instantiate_llm(rel, prefix, completer=completer)
+            plan = instantiate_llm(rel, prefix, completer=completer, feedback=feedback)
             return plan
         except Exception as exc:
             fallback = instantiate_template(rel, prefix)

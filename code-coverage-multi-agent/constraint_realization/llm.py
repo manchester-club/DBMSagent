@@ -5,7 +5,7 @@ import json
 import os
 import urllib.error
 import urllib.request
-from typing import Optional
+from typing import List, Optional
 
 # Same defaults as langgraph/coverage_multi_agent.py (金箍 DeepSeek).
 _DEFAULT_KEY = (
@@ -25,7 +25,24 @@ class LLMError(RuntimeError):
     pass
 
 
-def _complete_openai_compat(prompt: str, *, system: str, temperature: float) -> str:
+def _messages(prompt: Optional[str], system: str, messages: Optional[List[dict]]) -> List[dict]:
+    out = [{"role": "system", "content": system}]
+    if messages:
+        out.extend(messages)
+    elif prompt:
+        out.append({"role": "user", "content": prompt})
+    else:
+        raise LLMError("no prompt or messages")
+    return out
+
+
+def _complete_openai_compat(
+    prompt: Optional[str],
+    *,
+    system: str,
+    temperature: float,
+    messages: Optional[List[dict]] = None,
+) -> str:
     key = os.environ.get("DEEPSEEK_API_KEY") or os.environ.get("OPENAI_API_KEY") or _DEFAULT_KEY
     if not key:
         raise LLMError("no DEEPSEEK_API_KEY / OPENAI_API_KEY")
@@ -39,10 +56,7 @@ def _complete_openai_compat(prompt: str, *, system: str, temperature: float) -> 
     payload = {
         "model": model,
         "temperature": temperature,
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": _messages(prompt, system, messages),
     }
     req = urllib.request.Request(
         url,
@@ -58,17 +72,20 @@ def _complete_openai_compat(prompt: str, *, system: str, temperature: float) -> 
     return body["choices"][0]["message"]["content"]
 
 
-def _complete_ollama(prompt: str, *, system: str, temperature: float) -> str:
+def _complete_ollama(
+    prompt: Optional[str],
+    *,
+    system: str,
+    temperature: float,
+    messages: Optional[List[dict]] = None,
+) -> str:
     host = (os.environ.get("OLLAMA_HOST") or "http://127.0.0.1:11434").rstrip("/")
     model = os.environ.get("OLLAMA_MODEL") or os.environ.get("LLM_MODEL") or "qwen3:32b"
     payload = {
         "model": model,
         "stream": False,
         "options": {"temperature": temperature},
-        "messages": [
-            {"role": "system", "content": system},
-            {"role": "user", "content": prompt},
-        ],
+        "messages": _messages(prompt, system, messages),
     }
     req = urllib.request.Request(
         host + "/api/chat",
@@ -81,14 +98,20 @@ def _complete_ollama(prompt: str, *, system: str, temperature: float) -> str:
     return body["message"]["content"]
 
 
-def complete_chat(prompt: str, *, system: str, temperature: float = 0.2) -> str:
+def complete_chat(
+    prompt: Optional[str] = None,
+    *,
+    system: str,
+    temperature: float = 0.2,
+    messages: Optional[List[dict]] = None,
+) -> str:
     errors = []
     for fn, name in (
         (_complete_openai_compat, "deepseek/openai"),
         (_complete_ollama, "ollama"),
     ):
         try:
-            return fn(prompt, system=system, temperature=temperature)
+            return fn(prompt, system=system, temperature=temperature, messages=messages)
         except Exception as exc:
             errors.append(f"{name}: {exc}")
     raise LLMError("; ".join(errors))

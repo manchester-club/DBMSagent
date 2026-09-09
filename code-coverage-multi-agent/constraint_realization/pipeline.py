@@ -186,9 +186,53 @@ def main(argv: Optional[List[str]] = None) -> int:
         action="store_true",
         help="use the deterministic template instantiator instead of the LLM",
     )
+    p.add_argument(
+        "--agent",
+        action="store_true",
+        help="ReAct supervisor over analysis tools; LLM only instantiates recovered SQL",
+    )
+    p.add_argument("--max-steps", type=int, default=40, help="supervisor ReAct step budget")
+    p.add_argument("--max-retries", type=int, default=3, help="instantiate/execute retries per family")
     args = p.parse_args(argv)
     pg_src = Path(args.pg_src)
     use_llm = not args.no_llm
+    roots = [Path(x) for x in args.gcov_root] if args.gcov_root else None
+
+    if args.agent:
+        from .agent import AgentConfig, run_agent
+
+        report = run_agent(
+            AgentConfig(
+                pg_src=pg_src,
+                gcov_roots=roots,
+                use_llm_instantiate=use_llm,
+                use_llm_supervisor=use_llm,
+                do_execute=args.execute,
+                max_steps=args.max_steps,
+                max_retries=args.max_retries,
+                target=args.target,
+            )
+        )
+        _print(
+            "AGENT constraint realization",
+            f"steps={report.get('steps')} finished={report.get('finished')} "
+            f"families={report.get('family_count')} "
+            f"pc_v_recovered={report.get('pc_v_recovered')}",
+        )
+        for fam in report.get("families") or []:
+            extra = fam.get("writer") or fam.get("sql_template") or fam["kind"]
+            via = fam.get("plan_via")
+            via_s = f" via={via}" if via else ""
+            print(
+                f"  [{fam.get('verdict')}] {fam['family']}  n={fam.get('members')}  "
+                f"hits={fam.get('guard_hits')}  {fam.get('example')}{via_s}  {extra}"
+            )
+        if args.json_out:
+            Path(args.json_out).write_text(
+                json.dumps(report, indent=2, default=str), encoding="utf-8"
+            )
+            print(f"wrote {args.json_out}")
+        return 0
 
     if args.all or not args.target:
         if not args.target:
