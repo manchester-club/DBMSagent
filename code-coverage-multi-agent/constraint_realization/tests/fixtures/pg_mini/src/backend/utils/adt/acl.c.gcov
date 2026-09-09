@@ -1,0 +1,9 @@
+        -:    0:Source:acl.c
+        -:    1:void
+        3:    2:ExecGrantStmt(void)
+        -:    3:{
+      40:    4:	if (aclmask)
+        -:    5:	{
+    #####:    6:		elog(ERROR, "permission denied");
+        -:    7:	}
+        -:    8:}

@@ -1,0 +1,9 @@
+        -:    0:Source:objectaccess.c
+        -:    1:void
+        -:    2:RunObjectPostCreateHook(void)
+        -:    3:{
+      20:    4:	if (object_access_hook)
+        -:    5:	{
+    #####:    6:		object_access_hook();
+        -:    7:	}
+        -:    8:}

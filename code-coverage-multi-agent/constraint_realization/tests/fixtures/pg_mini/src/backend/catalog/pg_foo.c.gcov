@@ -1,0 +1,24 @@
+        -:    0:Source:pg_foo.c
+        -:    1:#include "postgres.h"
+        -:    2:
+        -:    3:List *
+        10:    4:find_inheritance_children_extended(Oid parentrelId, bool omit_detached)
+        -:    5:{
+        -:    6:	HeapTuple inheritsTuple;
+        -:    7:
+      99:    8:	if (((Form_pg_foo) GETSTRUCT(inheritsTuple))->foopend)
+        -:    9:	{
+    #####:   10:		omit_detached = true;
+        -:   11:	}
+        10:   12:	return NIL;
+        -:   13:}
+        -:   14:
+        -:   15:bool
+        5:   16:other_reader(HeapTuple tup)
+        -:   17:{
+      12:   18:	if (((Form_pg_foo) GETSTRUCT(tup))->barflag)
+        -:   19:	{
+    #####:   20:		return true;
+        -:   21:	}
+        5:   22:	return false;
+        -:   23:}
